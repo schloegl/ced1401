@@ -1,4 +1,9 @@
 
+0) Prerequisites (http://wiki.debian.org/ModuleAssistant)
+   apt-get install module-assistant
+   m-a prepare
+   m-a update
+
 1) Download repository
    git clone http://pub.ist.ac.at/~schloegl/src/ced1401/.git 
 
