@@ -171,7 +171,7 @@ static int ced_open(struct inode *inode, struct file *file)
     struct usb_interface* interface = usb_find_interface(&ced_driver, subminor);
     if (!interface)
     {
-        err("%s - error, can't find device for minor %d", __func__, subminor);
+        printk("%s (line %i) %s: %s - error, can't find device for minor %d", __FILE__,__LINE__,__func__, __func__,subminor);
         retval = -ENODEV;
         goto exit;
     }
@@ -491,7 +491,7 @@ static void CopyUserSpace(DEVICE_EXTENSION *pdx, int n)
             int nPage = dwOffset >> PAGE_SHIFT;    // page number in table
             if (nPage < pArea->nPages)
             {
-                char *pvAddress = (char*)kmap_atomic(pArea->pPages[nPage], KM_IRQ0);
+                char *pvAddress = (char*)kmap_atomic(pArea->pPages[nPage]);
                 if (pvAddress)
                 {
                     unsigned int uiPageOff = dwOffset & (PAGE_SIZE-1);   // offset into the page
@@ -502,7 +502,7 @@ static void CopyUserSpace(DEVICE_EXTENSION *pdx, int n)
                         memcpy(pvAddress+uiPageOff, pCoherBuf, uiXfer);
                     else
                         memcpy(pCoherBuf, pvAddress+uiPageOff, uiXfer);
-                    kunmap_atomic(pvAddress, KM_IRQ0);
+                    kunmap_atomic(pvAddress);
                     dwOffset += uiXfer;
                     pCoherBuf += uiXfer;
                     n -= uiXfer;
@@ -1367,7 +1367,7 @@ static int ced_probe(struct usb_interface *interface, const struct usb_device_id
     pdx = kzalloc(sizeof(*pdx), GFP_KERNEL);
     if (!pdx)
     {
-        err("Out of memory");
+        printk("%s: Out of memory",__func__);
         goto error;
     }
 
@@ -1458,7 +1458,7 @@ static int ced_probe(struct usb_interface *interface, const struct usb_device_id
     if (retval)
     {
         /* something prevented us from registering this driver */
-        err("Not able to get a minor for this device.");
+        printk("%s: Not able to get a minor for this device.",__func__);
         usb_set_intfdata(interface, NULL);
         goto error;
     }
@@ -1580,7 +1580,7 @@ static int __init usb_skel_init(void)
     /* register this driver with the USB subsystem */
     int result = usb_register(&ced_driver);
     if (result)
-        err("usb_register failed. Error number %d", result);
+        printk("%s: usb_register failed. Error number %d", __func__,result);
 
     return result;
 }
