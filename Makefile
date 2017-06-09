@@ -11,6 +11,7 @@ all: try1432
 
 clean:
 	$(MAKE) -C $(KDIR) SUBDIRS=$(PWD) clean
+	rm try1432
 
 %.o:%.c
 	gcc $(EXTRA_CFLAGS) -c $^
