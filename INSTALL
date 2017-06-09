@@ -1,3 +1,10 @@
+The main steps for testing the CED driver are shown here. 
+
+
+0) Prerequisites (http://wiki.debian.org/ModuleAssistant)
+   apt-get install module-assistant
+   m-a prepare
+   m-a update
 
 0) Prerequisites (http://wiki.debian.org/ModuleAssistant)
    apt-get install module-assistant
@@ -5,19 +12,27 @@
    m-a update
 
 1) Download repository
-   git clone http://pub.ist.ac.at/~schloegl/src/ced1401/.git 
+   git clone http://pub.ist.ac.at/~schloegl/src/ced1401/.git
 
-2) Make 
+2) Make
     make -C ced1401
 
-3a) Load kernel module 
+3) Load kernel module
    CEDPATH=`pwd`/ced1401;
-   sudo /sbin/insmod $CEDPATH/cedusb.ko   
+   sudo insmod $CEDPATH/cedusb.ko
 
- b) Test kernel module 
+4) make it available to user space
+   U=`whoami`
+   sudo chown $U /dev/cedusb*
+
+5) debugging information
    lsmod |grep ced
+    sudo tail -f /var/log/syslog
 
- c) unload kernel module 
+6) run test 
+   ./try1432
+
+9) unload kernel module
    sudo rmmod cedusb
 
 

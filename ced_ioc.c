@@ -910,8 +910,8 @@ int GetTransfer(DEVICE_EXTENSION *pdx, TGET_TX_BLOCK __user *pTX)
         tx->entries[0].physical = (long long)(tx->linear+pdx->StagedOffset);
         tx->entries[0].size = tx->size;
         iReturn = copy_to_user(pTX, tx, sizeof(*tx));
-        kfree(tx); 
-        return (iReturn);  
+        kfree(tx);
+        return (iReturn);
     }
     mutex_unlock(&pdx->io_mutex);
     return iReturn;

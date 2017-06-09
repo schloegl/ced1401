@@ -171,9 +171,16 @@
 #include <string.h>
 #include <stdio.h>
 
-#include "USE1401.H"
+#include "use1401.h"
 
-#ifdef _IS_WINDOWS_
+#ifdef NDEBUG
+#define VERBOSE 0
+#else
+#define VERBOSE 1
+#endif
+#define STUB 1
+
+#if defined(_IS_WINDOWS_) && !defined(__WINE__)
 #include <io.h>
 #include <windows.h>
 #pragma warning(disable: 4100) /* Disable "Unused formal parameter" warning */
@@ -191,12 +198,14 @@
 #include "use14_ioc.h"          // links to device driver stuff
 #endif
 
-#ifdef LINUX
+#if defined(LINUX) || defined(__WINE__)
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/ioctl.h>
 #include <errno.h>
-#include <sys/time.h>
+#if !defined(__WINE__)
+  #include <sys/time.h>
+#endif
 #include <sched.h>
 #include <libgen.h>
 #define PATHSEP '/'
@@ -206,8 +215,6 @@
 
 #include "ced_ioctl.h"          // links to device driver stuff
 #endif
-
-#define MAX1401         8       // The number of 1401s that can be supported
 
 /*
 ** These are the 1401 type codes returned by the driver, they are a slightly
@@ -233,24 +240,31 @@ static char szLastName[20];     // additional text information
 ** set a constructor and a destructor call for the library (see the end) to
 ** initialise important structures, or call use1401_load().
 */
-static short asDriverType[MAX1401] = {0};
+short asDriverType[MAX1401+1] = {0};
 static int lLastDriverVersion = U14ERR_NO1401DRIV;
-static int lLastDriverType = U14TYPEUNKNOWN;
-static int alDriverVersion[MAX1401];            // version/type of each driver
+int lLastDriverType = U14TYPEUNKNOWN;
+int alDriverVersion[MAX1401+1];            // version/type of each driver
 static int alTimeOutPeriod[MAX1401];            // timeout time in milliseconds
-static short asLastRetCode[MAX1401];            // last code from a fn call
-static short asType1401[MAX1401] = {0};         // The type of the 1401
+short asLastRetCode[MAX1401+1];            // last code from a fn call
+short asType1401[MAX1401+1] = {0};         // The type of the 1401
 static BOOL abGrabbed[MAX1401] = {0};           // Flag for grabbed, set true by grab1401
 static int iAttached = 0;                       // counts process attaches so can let go
 
-#ifdef _IS_WINDOWS_
+#if defined(_IS_WINDOWS_) || defined(__WINE__)
 /****************************************************************************
 ** Windows NT Specific Variables and internal types
 ****************************************************************************/
-static HANDLE aHand1401[MAX1401] = {0};         // handles for 1401s
-static HANDLE aXferEvent[MAX1401] = {0};        // transfer events for the 1401s
+#if defined(__WINE__)
+static uint32_t aHand1401[MAX1401+1] = {0};         // handles for 1401s
+static uint32_t aXferEvent[MAX1401+1] = {0};        // transfer events for the 1401s
+static uint32_t apAreas[MAX1401][MAX_TRANSAREAS]; // Locked areas
+static uint32_t auAreas[MAX1401][MAX_TRANSAREAS]; // Size of locked areas
+#else
+static HANDLE aHand1401[MAX1401+1] = {0};         // handles for 1401s
+static HANDLE aXferEvent[MAX1401+1] = {0};        // transfer events for the 1401s
 static LPVOID apAreas[MAX1401][MAX_TRANSAREAS]; // Locked areas
 static DWORD  auAreas[MAX1401][MAX_TRANSAREAS]; // Size of locked areas
+#endif
 static BOOL   bWindows9x = FALSE;               // if we are Windows 95 or better
 #ifdef _WIN64
 #define USE_NT_DIOC(ind) TRUE
@@ -261,8 +275,8 @@ static BOOL   abUseNTDIOC[MAX1401];             // Use NT-style DIOC parameters 
 
 #endif
 
-#ifdef LINUX
-static int aHand1401[MAX1401] = {0};    // handles for 1401s
+#if defined(LINUX) && !defined(__WINE__)
+int aHand1401[MAX1401+1] = {0};    // handles for 1401s
 #define INVALID_HANDLE_VALUE 0          // to avoid code differences
 #endif
 
@@ -272,14 +286,14 @@ static int aHand1401[MAX1401] = {0};    // handles for 1401s
 ** versions of BASIC, where this header was needed so we could load a command into
 ** memory.
 */
-#pragma pack(1)                 // pack our structure
+#pragma pack(1)
 typedef struct CmdHead          // defines header block on command
 {                               // for PC commands
    char   acBasic[5];           // BASIC information - needed to align things
    WORD   wBasicSz;             // size as seen by BASIC
    WORD   wCmdSize;             // size of the following info
 } __packed CMDHEAD;
-#pragma pack()                  // back to normal
+#pragma pack()
 
 /*
 ** The rest of the header looks like this...
@@ -297,6 +311,8 @@ typedef CMDHEAD *LPCMDHEAD;     // pointer to a command header
 
 static short CheckHandle(short h)
 {
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,h);
+
     if ((h < 0) || (h >= MAX1401))  // must be legal range...
         return U14ERR_BADHAND;
     if (aHand1401[h] <= 0)          // must be open
@@ -304,17 +320,21 @@ static short CheckHandle(short h)
     return U14ERR_NOERROR;
 }
 
-#ifdef _IS_WINDOWS_
 /****************************************************************************
 ** U14Status1401    Used for functions which do not pass any data in but
 **                  get data back
 ****************************************************************************/
 static short U14Status1401(short sHand, LONG lCode, TCSBLOCK* pBlk)
 {
+    if (VERBOSE) fprintf(stderr,"%s(%i,%i,..)\n",__func__,sHand,lCode);
+
     DWORD dwBytes = 0;
 
     if ((sHand < 0) || (sHand >= MAX1401))  /* Check parameters */
         return U14ERR_BADHAND;
+
+#if !defined(STUB)
+
 #ifndef _WIN64
     if (!USE_NT_DIOC(sHand)) 
     {   /* Windows 9x DIOC methods? */
@@ -336,6 +356,8 @@ static short U14Status1401(short sHand, LONG lCode, TCSBLOCK* pBlk)
         }
     }
 
+#endif  // STUB
+
     return U14ERR_DRIVCOMMS;
 }
 
@@ -345,10 +367,15 @@ static short U14Status1401(short sHand, LONG lCode, TCSBLOCK* pBlk)
 ****************************************************************************/
 static short U14Control1401(short sHand, LONG lCode, TCSBLOCK* pBlk)
 {
+
+    if (VERBOSE) fprintf(stderr,"%s(%i,%i,..)\n",__func__,sHand,lCode);
+
     DWORD dwBytes = 0;
 
     if ((sHand < 0) || (sHand >= MAX1401))              /* Check parameters */
         return U14ERR_BADHAND;
+
+#if !defined(STUB)
 
 #ifndef _WIN64
     if (!USE_NT_DIOC(sHand))                    
@@ -368,9 +395,10 @@ static short U14Control1401(short sHand, LONG lCode, TCSBLOCK* pBlk)
             return rWork.sState;
     }
 
+#endif // STUB
+
     return U14ERR_DRIVCOMMS;
 }
-#endif
 
 /****************************************************************************
 ** SafeTickCount
@@ -378,10 +406,12 @@ static short U14Control1401(short sHand, LONG lCode, TCSBLOCK* pBlk)
 *****************************************************************************/
 static long SafeTickCount()
 {
-#ifdef _IS_WINDOWS_
+    if (VERBOSE) fprintf(stderr,"%s()\n",__func__);
+
+#if defined(_IS_WINDOWS_) && !defined(__WINE__)
     return GetTickCount();
 #endif
-#ifdef LINUX
+#if defined(LINUX) || defined(__WINE__)
     struct timeval tv;
     gettimeofday(&tv, NULL);
     return (tv.tv_sec*1000 + tv.tv_usec/1000);
@@ -394,6 +424,9 @@ static long SafeTickCount()
 ****************************************************************************/
 static int ExtForType(short sType, char* szExt)
 {
+
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,sType);
+
     szExt[0] = 0;                       /* Default return is a blank string */
     switch (sType)
     {
@@ -415,6 +448,8 @@ static int ExtForType(short sType, char* szExt)
 ****************************************************************************/
 U14API(int) U14WhenToTimeOut(short hand)
 {
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
     int iNow = SafeTickCount();
     if ((hand >= 0) && (hand < MAX1401))
         iNow += alTimeOutPeriod[hand];
@@ -427,6 +462,8 @@ U14API(int) U14WhenToTimeOut(short hand)
 ****************************************************************************/
 U14API(short) U14PassedTime(int lCheckTime)
 {
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,lCheckTime);
+
     return (short)((SafeTickCount()-lCheckTime) > 0);
 }
 
@@ -437,6 +474,8 @@ U14API(short) U14PassedTime(int lCheckTime)
 ****************************************************************************/
 static void TranslateString(char* pStr)
 {
+    if (VERBOSE) fprintf(stderr,"%s(\"%s\")\n",__func__,pStr);
+
     int i = 0;
     while (pStr[i])
     {
@@ -455,6 +494,8 @@ static void TranslateString(char* pStr)
 ****************************************************************************/
 U14API(short) U14StrToLongs(const char* pszBuff, U14LONG *palNums, short sMaxLongs)
 {
+    if (VERBOSE) fprintf(stderr,"%s(...)\n",__func__);
+
     WORD wChInd = 0;                // index into source
     short sLgInd = 0;               // index into result longs
 
@@ -513,6 +554,8 @@ U14API(short) U14StrToLongs(const char* pszBuff, U14LONG *palNums, short sMaxLon
 ****************************************************************************/
 U14API(short) U14LongsFrom1401(short hand, U14LONG *palBuff, short sMaxLongs)
 {
+    if (VERBOSE) fprintf(stderr,"%s(%i,...)\n",__func__,hand);
+
     char szWork[MAXSTRLEN];
     short sResult = U14GetString(hand, szWork, MAXSTRLEN);/* get reply from 1401   */
     if (sResult == U14ERR_NOERROR)                  /* if no error convert   */
@@ -527,6 +570,8 @@ U14API(short) U14LongsFrom1401(short hand, U14LONG *palBuff, short sMaxLongs)
 ****************************************************************************/
 U14API(short) U14CheckErr(short hand)
 {
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
     short sResult = U14SendString(hand, ";ERR;");
     if (sResult == U14ERR_NOERROR)
     {
@@ -561,6 +606,8 @@ U14API(short) U14CheckErr(short hand)
 ****************************************************************************/
 U14API(short) U14LastErrCode(short hand)
 {
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
     if ((hand < 0) || (hand >= MAX1401))
         return U14ERR_BADHAND;
     return asLastRetCode[hand];
@@ -572,6 +619,8 @@ U14API(short) U14LastErrCode(short hand)
 ****************************************************************************/
 U14API(void) U14SetTimeout(short hand, int lTimeOut)
 {
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
     if ((hand < 0) || (hand >= MAX1401))
         return;
     alTimeOutPeriod[hand] = lTimeOut;
@@ -583,6 +632,8 @@ U14API(void) U14SetTimeout(short hand, int lTimeOut)
 ****************************************************************************/
 U14API(int) U14GetTimeout(short hand)
 {
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
     if ((hand < 0) || (hand >= MAX1401))
         return U14ERR_BADHAND;
     return alTimeOutPeriod[hand];
@@ -594,14 +645,16 @@ U14API(int) U14GetTimeout(short hand)
 ****************************************************************************/
 U14API(short) U14OutBufSpace(short hand)
 {
-#ifdef _IS_WINDOWS_
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
+#if defined(_IS_WINDOWS_) && !defined(__WINE__)
     TCSBLOCK csBlock;
     short sErr = U14Status1401(hand, U14_GETOUTBUFSPACE,&csBlock);
     if (sErr == U14ERR_NOERROR)
         sErr = csBlock.ints[0];
     return sErr;
 #endif
-#ifdef LINUX
+#if defined(LINUX) || defined(__WINE__)
     short sErr = CheckHandle(hand);
     return (sErr == U14ERR_NOERROR) ? CED_GetOutBufSpace(aHand1401[hand]) : sErr;
 #endif
@@ -614,14 +667,16 @@ U14API(short) U14OutBufSpace(short hand)
 ****************************************************************************/
 U14API(int) U14BaseAddr1401(short hand)
 {
-#ifdef _IS_WINDOWS_
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
+#if defined(_IS_WINDOWS_) && !defined(__WINE__)
     TCSBLOCK csBlock;
     int iError = U14Status1401(hand, U14_GETBASEADDRESS,&csBlock);
     if (iError == U14ERR_NOERROR)
         iError = csBlock.longs[0];
     return iError;
 #endif
-#ifdef LINUX
+#if defined(LINUX) || defined(__WINE__)
     short sErr = CheckHandle(hand);
     return (sErr == U14ERR_NOERROR) ? CED_GetBaseAddress(aHand1401[hand]) : sErr;
 #endif
@@ -633,7 +688,9 @@ U14API(int) U14BaseAddr1401(short hand)
 ****************************************************************************/
 U14API(short) U14StateOf1401(short hand)
 {
-#ifdef _IS_WINDOWS_
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
+#if defined(_IS_WINDOWS_) && !defined(__WINE__)
     TCSBLOCK csBlock;
     short sErr = U14Status1401(hand, U14_STATEOF1401, &csBlock);
     if (sErr == U14ERR_NOERROR)
@@ -643,7 +700,7 @@ U14API(short) U14StateOf1401(short hand)
             sErr = U14ERR_NOERROR;
     }
 #endif
-#ifdef LINUX
+#if defined(LINUX) || defined(__WINE__)
     short sErr = CheckHandle(hand);
     if (sErr == U14ERR_NOERROR)
     {
@@ -663,6 +720,8 @@ U14API(short) U14StateOf1401(short hand)
 ****************************************************************************/
 U14API(int) U14DriverVersion(short hand)
 {
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
     return CheckHandle(hand) != U14ERR_NOERROR ? lLastDriverVersion : alDriverVersion[hand];
 }
 
@@ -674,6 +733,8 @@ U14API(int) U14DriverVersion(short hand)
 ****************************************************************************/
 U14API(int) U14DriverType(short hand)
 {
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
     return CheckHandle(hand) != U14ERR_NOERROR ? lLastDriverType : asDriverType[hand];
 }
 
@@ -683,6 +744,8 @@ U14API(int) U14DriverType(short hand)
 ****************************************************************************/
 U14API(short) U14DriverName(short hand, char* pBuf, WORD wMax)
 {
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
     char* pName;
     *pBuf = 0;                             // Start off with a blank string
     switch (U14DriverType(hand))           // Results according to type
@@ -704,14 +767,16 @@ U14API(short) U14DriverName(short hand, char* pBuf, WORD wMax)
 ****************************************************************************/
 U14API(short) U14BlkTransState(short hand)
 {
-#ifdef _IS_WINDOWS_
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
+#if defined(_IS_WINDOWS_) && !defined(__WINE__)
     TCSBLOCK csBlock;
     short sErr = U14Status1401(hand, U14_BLKTRANSSTATE, &csBlock);
     if (sErr == U14ERR_NOERROR)
         sErr = csBlock.ints[0];
     return sErr;
 #endif
-#ifdef LINUX
+#if defined(LINUX) || defined(__WINE__)
     short sErr = CheckHandle(hand);
     return (sErr == U14ERR_NOERROR) ? CED_BlkTransState(aHand1401[hand]) : sErr;
 #endif
@@ -723,10 +788,12 @@ U14API(short) U14BlkTransState(short hand)
 ****************************************************************************/
 U14API(short) U14Grab1401(short hand)
 {
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
     short sErr = CheckHandle(hand);
     if (sErr == U14ERR_NOERROR)
     {
-#ifdef _IS_WINDOWS_
+#if defined(_IS_WINDOWS_) && !defined(__WINE__)
         if (abGrabbed[hand])            // 1401 should not have been grabbed
             sErr = U14ERR_ALREADYSET;   // Error code defined for this
         else
@@ -735,7 +802,7 @@ U14API(short) U14Grab1401(short hand)
             sErr = U14Control1401(hand, U14_GRAB1401, &csBlock);
         }
 #endif
-#ifdef LINUX
+#if defined(LINUX) || defined(__WINE__)
         // 1401 should not have been grabbed
         sErr = abGrabbed[hand] ? U14ERR_ALREADYSET : CED_Grab1401(aHand1401[hand]);
 #endif
@@ -750,10 +817,12 @@ U14API(short) U14Grab1401(short hand)
 ****************************************************************************/
 U14API(short)  U14Free1401(short hand)
 {
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
     short sErr = CheckHandle(hand);
     if (sErr == U14ERR_NOERROR)
     {
-#ifdef _IS_WINDOWS_
+#if defined(_IS_WINDOWS_) && !defined(__WINE__)
         if (abGrabbed[hand])    // 1401 should have been grabbed
         {
             TCSBLOCK csBlock;
@@ -762,7 +831,7 @@ U14API(short)  U14Free1401(short hand)
         else
             sErr = U14ERR_NOTSET;
 #endif
-#ifdef LINUX
+#if defined(LINUX) || defined(__WINE__)
         // 1401 should not have been grabbed
         sErr = abGrabbed[hand] ? CED_Free1401(aHand1401[hand]) : U14ERR_NOTSET;
 #endif
@@ -781,19 +850,21 @@ U14API(short)  U14Free1401(short hand)
 ****************************************************************************/
 U14API(short) U14Peek1401(short hand, DWORD dwAddr, int nSize, int nRepeats)
 {
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
     short sErr = CheckHandle(hand);
     if (sErr == U14ERR_NOERROR)
     {
         if (abGrabbed[hand])    // 1401 should have been grabbed
         {
-#ifdef _IS_WINDOWS_
+#if defined(_IS_WINDOWS_) && !defined(__WINE__)
             TCSBLOCK csBlock;
             csBlock.longs[0] = (long)dwAddr;
             csBlock.longs[1] = nSize;
             csBlock.longs[2] = nRepeats;
             sErr = U14Control1401(hand, U14_DBGPEEK, &csBlock);
 #endif
-#ifdef LINUX
+#if defined(LINUX) || defined(__WINE__)
             TDBGBLOCK dbb;
             dbb.iAddr = (int)dwAddr;
             dbb.iWidth = nSize;
@@ -816,12 +887,14 @@ U14API(short) U14Peek1401(short hand, DWORD dwAddr, int nSize, int nRepeats)
 U14API(short) U14Poke1401(short hand, DWORD dwAddr, DWORD dwValue,
                                       int nSize, int nRepeats)
 {
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
     short sErr = CheckHandle(hand);
     if (sErr == U14ERR_NOERROR)
     {
         if (abGrabbed[hand])    // 1401 should have been grabbed
         {
-#ifdef _IS_WINDOWS_
+#if defined(_IS_WINDOWS_) && !defined(__WINE__)
             TCSBLOCK csBlock;
             csBlock.longs[0] = (long)dwAddr;
             csBlock.longs[1] = nSize;
@@ -829,7 +902,7 @@ U14API(short) U14Poke1401(short hand, DWORD dwAddr, DWORD dwValue,
             csBlock.longs[3] = (long)dwValue;
             sErr = U14Control1401(hand, U14_DBGPOKE, &csBlock);
 #endif
-#ifdef LINUX
+#if defined(LINUX) || defined(__WINE__)
             TDBGBLOCK dbb;
             dbb.iAddr = (int)dwAddr;
             dbb.iWidth = nSize;
@@ -852,12 +925,14 @@ U14API(short) U14Poke1401(short hand, DWORD dwAddr, DWORD dwValue,
 U14API(short) U14Ramp1401(short hand, DWORD dwAddr, DWORD dwDef, DWORD dwEnable,
                                       int nSize, int nRepeats)
 {
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
     short sErr = CheckHandle(hand);
     if (sErr == U14ERR_NOERROR)
     {
         if (abGrabbed[hand])    // 1401 should have been grabbed
         {
-#ifdef _IS_WINDOWS_
+#if defined(_IS_WINDOWS_) && !defined(__WINE__)
             TCSBLOCK csBlock;
             csBlock.longs[0] = (long)dwAddr;
             csBlock.longs[1] = (long)dwDef;
@@ -866,7 +941,7 @@ U14API(short) U14Ramp1401(short hand, DWORD dwAddr, DWORD dwDef, DWORD dwEnable,
             csBlock.longs[4] = nRepeats;
             sErr = U14Control1401(hand, U14_DBGRAMPDATA, &csBlock);
 #endif
-#ifdef LINUX
+#if defined(LINUX) || defined(__WINE__)
             TDBGBLOCK dbb;
             dbb.iAddr = (int)dwAddr;
             dbb.iDefault = (int)dwDef;
@@ -890,12 +965,14 @@ U14API(short) U14Ramp1401(short hand, DWORD dwAddr, DWORD dwDef, DWORD dwEnable,
 U14API(short) U14RampAddr(short hand, DWORD dwDef, DWORD dwEnable,
                                       int nSize, int nRepeats)
 {
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
     short sErr = CheckHandle(hand);
     if (sErr == U14ERR_NOERROR)
     {
         if (abGrabbed[hand])    // 1401 should have been grabbed
         {
-#ifdef _IS_WINDOWS_
+#if defined(_IS_WINDOWS_) && !defined(__WINE__)
             TCSBLOCK csBlock;
             csBlock.longs[0] = (long)dwDef;
             csBlock.longs[1] = (long)dwEnable;
@@ -903,7 +980,7 @@ U14API(short) U14RampAddr(short hand, DWORD dwDef, DWORD dwEnable,
             csBlock.longs[3] = nRepeats;
             sErr = U14Control1401(hand, U14_DBGRAMPADDR, &csBlock);
 #endif
-#ifdef LINUX
+#if defined(LINUX) || defined(__WINE__)
             TDBGBLOCK dbb;
             dbb.iDefault = (int)dwDef;
             dbb.iMask = (int)dwEnable;
@@ -925,9 +1002,11 @@ U14API(short) U14RampAddr(short hand, DWORD dwDef, DWORD dwEnable,
 ****************************************************************************/
 U14API(short) U14StopDebugLoop(short hand)
 {
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
     short sErr = CheckHandle(hand);
     if (sErr == U14ERR_NOERROR)
-#ifdef _IS_WINDOWS_
+#if defined(_IS_WINDOWS_) && !defined(__WINE__)
     {
         if (abGrabbed[hand])    // 1401 should have been grabbed
         {
@@ -938,7 +1017,7 @@ U14API(short) U14StopDebugLoop(short hand)
             sErr = U14ERR_NOTSET;
     }
 #endif
-#ifdef LINUX
+#if defined(LINUX) || defined(__WINE__)
         sErr = abGrabbed[hand] ? CED_DbgStopLoop(aHand1401[hand]) : U14ERR_NOTSET;
 #endif
     return sErr;
@@ -950,18 +1029,20 @@ U14API(short) U14StopDebugLoop(short hand)
 ****************************************************************************/
 U14API(short) U14GetDebugData(short hand, U14LONG* plValue)
 {
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
     short sErr = CheckHandle(hand);
     if (sErr == U14ERR_NOERROR)
     {
         if (abGrabbed[hand])    // 1401 should have been grabbed
         {
-#ifdef _IS_WINDOWS_
+#if defined(_IS_WINDOWS_) && !defined(__WINE__)
             TCSBLOCK csBlock;
             sErr = U14Status1401(hand, U14_DBGGETDATA, &csBlock);
             if (sErr == U14ERR_NOERROR)
                 *plValue = csBlock.longs[0];    // Return the data
 #endif
-#ifdef LINUX
+#if defined(LINUX) || defined(__WINE__)
             TDBGBLOCK dbb;
             sErr = CED_DbgGetData(aHand1401[hand], &dbb);
             if (sErr == U14ERR_NOERROR)
@@ -979,11 +1060,13 @@ U14API(short) U14GetDebugData(short hand, U14LONG* plValue)
 ****************************************************************************/
 U14API(short) U14StartSelfTest(short hand)
 {
-#ifdef _IS_WINDOWS_
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
+#if defined(_IS_WINDOWS_) && !defined(__WINE__)
     TCSBLOCK csBlock;
     return U14Control1401(hand, U14_STARTSELFTEST, &csBlock);
 #endif
-#ifdef LINUX
+#if defined(LINUX) || defined(__WINE__)
     short sErr = CheckHandle(hand);
     return (sErr == U14ERR_NOERROR) ? CED_StartSelfTest(aHand1401[hand]) : sErr;
 #endif
@@ -994,7 +1077,9 @@ U14API(short) U14StartSelfTest(short hand)
 ****************************************************************************/
 U14API(short) U14CheckSelfTest(short hand, U14LONG *pData)
 {
-#ifdef _IS_WINDOWS_
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
+#if defined(_IS_WINDOWS_) && !defined(__WINE__)
     TCSBLOCK csBlock;
     short sErr = U14Status1401(hand, U14_CHECKSELFTEST, &csBlock);
     if (sErr == U14ERR_NOERROR)
@@ -1004,7 +1089,7 @@ U14API(short) U14CheckSelfTest(short hand, U14LONG *pData)
         pData[2] = csBlock.longs[2];
     }
 #endif
-#ifdef LINUX
+#if defined(LINUX) || defined(__WINE__)
     short sErr = CheckHandle(hand);
     if (sErr == U14ERR_NOERROR)                /* Check parameters */
     {
@@ -1026,6 +1111,8 @@ U14API(short) U14CheckSelfTest(short hand, U14LONG *pData)
 ****************************************************************************/
 U14API(short) U14GetUserMemorySize(short hand, DWORD *pMemorySize)
 {
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
     // The original 1401 used a different command for getting the size
     short sErr = U14SendString(hand, (asType1401[hand] == U14TYPE1401) ? "MEMTOP;" : "MEMTOP,?;");
     *pMemorySize = 0;         /* if we get error then leave size set at 0  */
@@ -1051,6 +1138,8 @@ U14API(short) U14GetUserMemorySize(short hand, DWORD *pMemorySize)
 ****************************************************************************/
 U14API(short) U14TypeOf1401(short hand)
 {
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
     if ((hand < 0) || (hand >= MAX1401))                /* Check parameters */
         return U14ERR_BADHAND;
     else
@@ -1063,6 +1152,8 @@ U14API(short) U14TypeOf1401(short hand)
 ****************************************************************************/
 U14API(short) U14NameOf1401(short hand, char* pBuf, WORD wMax)
 {
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
     short sErr = CheckHandle(hand);
     if (sErr == U14ERR_NOERROR)
     {
@@ -1091,12 +1182,14 @@ U14API(short) U14NameOf1401(short hand, char* pBuf, WORD wMax)
 *****************************************************************************/
 U14API(short) U14TransferFlags(short hand)
 {
-#ifdef _IS_WINDOWS_
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
+#if defined(_IS_WINDOWS_) && !defined(__WINE__)
     TCSBLOCK csBlock;
     short sErr = U14Status1401(hand, U14_TRANSFERFLAGS, &csBlock);
     return (sErr == U14ERR_NOERROR) ? (short)csBlock.ints[0] : sErr;
 #endif
-#ifdef LINUX
+#if defined(LINUX) || defined(__WINE__)
     short sErr = CheckHandle(hand);
     return (sErr == U14ERR_NOERROR) ? CED_TransferFlags(aHand1401[hand]) : sErr;
 #endif
@@ -1108,16 +1201,18 @@ U14API(short) U14TransferFlags(short hand)
 ** Hi word is major revision, low word is minor revision.
 ** Assumes that hand has been checked. Also codes driver type in bits 24 up.
 *****************************************************************************/
-static int GetDriverVersion(short hand)
+U14API(int) GetDriverVersion(short hand)
 {
-#ifdef _IS_WINDOWS_
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
+#if defined(_IS_WINDOWS_) && !defined(__WINE__)
     TCSBLOCK csBlock;
     int iErr = U14Status1401(hand, U14_GETDRIVERREVISION, &csBlock);
     if (iErr == U14ERR_NOERROR)
         iErr = csBlock.longs[0];
     return iErr;
 #endif
-#ifdef LINUX
+#if defined(LINUX) || defined(__WINE__)
     return CED_GetDriverRevision(aHand1401[hand]);
 #endif
 }
@@ -1130,6 +1225,8 @@ static int GetDriverVersion(short hand)
 *****************************************************************************/
 U14API(int) U14MonitorRev(short hand)
 {
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
     int iRev = 0;
     int iErr = CheckHandle(hand);
     if (iErr != U14ERR_NOERROR)                 // Check open and in use
@@ -1200,11 +1297,15 @@ U14API(int) U14MonitorRev(short hand)
 **         1401 switched off, so we check state and close the driver
 **         if the state is unsatisfactory in U14Open1401.
 ****************************************************************************/
-#ifdef _IS_WINDOWS_
+#if defined(_IS_WINDOWS_) && !defined(__WINE__)
 #define U14NAMEOLD "\\\\.\\CED_140%d"
+
 #define U14NAMENEW "\\\\.\\CED%d"
 static short U14TryToOpen(int n1401, long* plRetVal, short* psHandle)
 {
+    //if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+    fprintf(stderr,"%s line %i: %s(%i,%i,%i)\n",__FILE__,__LINE__,__func__,n1401,*plRetVal,*psHandle);
+
     short sErr = U14ERR_NOERROR;
     HANDLE hDevice = INVALID_HANDLE_VALUE;
     DWORD dwErr = 0;
@@ -1292,9 +1393,12 @@ static short U14TryToOpen(int n1401, long* plRetVal, short* psHandle)
     return sErr;
 }
 #endif
-#ifdef LINUX
+#if defined(LINUX) || defined(__WINE__)
 static short U14TryToOpen(int n1401, long* plRetVal, short* psHandle)
 {
+    //if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,n1401);
+    fprintf(stdout,"%s line %i: %s(%i,%i,%i)\n",__FILE__,__LINE__,__func__,n1401,*plRetVal,*psHandle);
+
     short sErr = U14ERR_NOERROR;
     int fh = 0;                             // will be 1401 handle
     int iErr = 0;
@@ -1311,12 +1415,18 @@ static short U14TryToOpen(int n1401, long* plRetVal, short* psHandle)
     for (nDev = nFirst; nDev <= nLast; nDev++)
     {
         char szDevName[40];                 // name of the device to open
-        sprintf(szDevName,"/dev/cedusb/%d", nDev-1);
+        sprintf(szDevName,"/dev/cedusb%d", nDev-1);
         fh = open(szDevName, O_RDWR);       // can only be opened once at a time
+
+    fprintf(stdout,"%s line %i: %s (%i %s %i)\n",__FILE__,__LINE__,__func__,nDev,szDevName,fh);
+
         if (fh > 0)                         // Check 1401 if opened
         {
             int iType1401 = CED_TypeOf1401(fh); // get 1401 type
             aHand1401[nDev-1] = fh;         // Save handle for now
+
+    fprintf(stdout,"%s line %i: %s (%i %s %i)\n",__FILE__,__LINE__,__func__,nDev,szDevName,iType1401);
+
             if (iType1401 >= 0)
             {
                 *plRetVal = iType1401;
@@ -1358,6 +1468,9 @@ static short U14TryToOpen(int n1401, long* plRetVal, short* psHandle)
 *****************************************************************************/
 U14API(short) U14Open1401(short n1401)
 {
+    //if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,n1401);
+    fprintf(stderr,"%s line %i: %s(%i)\n",__FILE__,__LINE__,__func__,n1401);
+
     long     lRetVal = -1;
     short    sErr;
     short    hand = 0;
@@ -1367,7 +1480,9 @@ U14API(short) U14Open1401(short n1401)
 
     szLastName[0] = 0;          /* initialise the error info string */
 
+    fprintf(stdout,"%s line %i: %s (%i %i %i)\n",__FILE__,__LINE__,__func__,n1401,lRetVal,hand);
     sErr = U14TryToOpen(n1401, &lRetVal, &hand);
+    fprintf(stdout,"%s line %i: %s (%i %i %i)\n",__FILE__,__LINE__,__func__,n1401,lRetVal,hand);
     if (sErr == U14ERR_NOERROR)
     {
         long lDriverVersion = GetDriverVersion(hand);   /* get driver revision */
@@ -1434,6 +1549,8 @@ U14API(short) U14Open1401(short n1401)
 ****************************************************************************/
 U14API(short) U14Close1401(short hand)
 {
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
     int j;
     int iAreaMask = 0;                          // Mask for active areas
     short sErr = CheckHandle(hand);
@@ -1457,7 +1574,7 @@ U14API(short) U14Close1401(short hand)
                 U14UnSetTransfer(hand, (WORD)j);
     }
 
-#ifdef _IS_WINDOWS_
+#if defined(_IS_WINDOWS_) && !defined(__WINE__)
     if (aXferEvent[hand])                       // if this 1401 has an open event handle
     {
         CloseHandle(aXferEvent[hand]);          // close down the handle
@@ -1466,7 +1583,7 @@ U14API(short) U14Close1401(short hand)
 
     if (CloseHandle(aHand1401[hand]))
 #endif
-#ifdef LINUX
+#if defined(LINUX) || defined(__WINE__)
     if (close(aHand1401[hand]) == 0)            // make sure that close works
 #endif
     {
@@ -1484,8 +1601,10 @@ U14API(short) U14Close1401(short hand)
 **************************************************************************/
 U14API(void) U14CloseAll(void)
 {
+    if (VERBOSE) fprintf(stderr,"%s()\n",__func__);
+
     int i;
-    for (i = 0; i < MAX1401; i++)       // Tidy up and make safe
+    for (i = 1; i <= MAX1401; i++)       // Tidy up and make safe
         if (aHand1401[i] != INVALID_HANDLE_VALUE)
             U14Close1401((short)i);     // Last ditch close 1401
 }
@@ -1496,11 +1615,13 @@ U14API(void) U14CloseAll(void)
 ****************************************************************************/
 U14API(short) U14Reset1401(short hand)
 {
-#ifdef _IS_WINDOWS_
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
+#if defined(_IS_WINDOWS_) && !defined(__WINE__)
     TCSBLOCK csBlock;
     return U14Control1401(hand, U14_RESET1401, &csBlock);
 #endif
-#ifdef LINUX
+#if defined(LINUX) || defined(__WINE__)
     short sErr = CheckHandle(hand);
     return (sErr == U14ERR_NOERROR) ? CED_Reset1401(aHand1401[hand]) : sErr;
 #endif
@@ -1513,7 +1634,9 @@ U14API(short) U14Reset1401(short hand)
 *****************************************************************************/
 U14API(short) U14ForceReset(short hand)
 {
-#ifdef _IS_WINDOWS_
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
+#if defined(_IS_WINDOWS_) && !defined(__WINE__)
     TCSBLOCK csBlock;
     return U14Control1401(hand, U14_FULLRESET, &csBlock);
 #endif
@@ -1529,11 +1652,13 @@ U14API(short) U14ForceReset(short hand)
 *****************************************************************************/
 U14API(short) U14KillIO1401(short hand)
 {
-#ifdef _IS_WINDOWS_
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
+#if defined(_IS_WINDOWS_) && !defined(__WINE__)
     TCSBLOCK csBlock;
     return U14Control1401(hand, U14_KILLIO1401, &csBlock);
 #endif
-#ifdef LINUX
+#if defined(LINUX) || defined(__WINE__)
     short sErr = CheckHandle(hand);
     return (sErr == U14ERR_NOERROR) ? CED_KillIO1401(aHand1401[hand]) : sErr;
 #endif
@@ -1546,6 +1671,8 @@ U14API(short) U14KillIO1401(short hand)
 *****************************************************************************/
 U14API(short) U14SendString(short hand, const char* pString)
 {
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
     int nChars;                     // length we are sending
     long lTimeOutTicks;             // when to time out
     BOOL bSpaceToSend;              // space to send yet
@@ -1557,7 +1684,7 @@ U14API(short) U14SendString(short hand, const char* pString)
     if (nChars > MAXSTRLEN)
         return U14ERR_STRLEN;       // String too long
 
-#ifdef _IS_WINDOWS_
+#if defined(_IS_WINDOWS_) && !defined(__WINE__)
     // To get here we must wait for the buffer to have some space
     lTimeOutTicks = U14WhenToTimeOut(hand);
     do
@@ -1628,7 +1755,7 @@ U14API(short) U14SendString(short hand, const char* pString)
     else
         return asLastRetCode[hand];
 #endif
-#ifdef LINUX
+#if defined(LINUX) || defined(__WINE__)
     // Just try to send it and see what happens!
     sErr = CED_SendString(aHand1401[hand], pString, nChars);
     if (sErr != U14ERR_NOOUT)       // if any result except "no room in output"...
@@ -1674,13 +1801,15 @@ U14API(short) U14SendString(short hand, const char* pString)
 *****************************************************************************/
 U14API(short) U14SendChar(short hand, char cChar)
 {
-#ifdef _IS_WINDOWS_
+    if (VERBOSE) fprintf(stderr,"%s(%i,%c)\n",__func__,hand,cChar);
+
+#if defined(_IS_WINDOWS_) && !defined(__WINE__)
     char sz[2]=" ";                         // convert to a string and send
     sz[0] = cChar;
     sz[1] = 0;
     return(U14SendString(hand, sz));        // String routines are better
 #endif
-#ifdef LINUX
+#if defined(LINUX) || defined(__WINE__)
     short sErr = CheckHandle(hand);
     return (sErr == U14ERR_NOERROR) ? CED_SendChar(aHand1401[hand], cChar) : sErr;
 #endif
@@ -1699,11 +1828,13 @@ U14API(short) U14SendChar(short hand, char cChar)
 ****************************************************************************/
 U14API(short) U14GetString(short hand, char* pBuffer, WORD wMaxLen)
 {
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
     short sErr = CheckHandle(hand);
     if (sErr != U14ERR_NOERROR)             // If an error...
         return sErr;                        // ...bail out!
 
-#ifdef _IS_WINDOWS_
+#if defined(_IS_WINDOWS_) && !defined(__WINE__)
     if (wMaxLen>1)                          // we need space for terminating 0
     {
         BOOL bLineToGet;                    // true when a line to get
@@ -1814,7 +1945,7 @@ U14API(short) U14GetString(short hand, char* pBuffer, WORD wMaxLen)
         sErr = U14ERR_BUFF_SMALL;
     return sErr;
 #endif
-#ifdef LINUX
+#if defined(LINUX) || defined(__WINE__)
     if (wMaxLen>1)                          // we need space for terminating 0
     {
         BOOL bLineToGet;                    // true when a line to get
@@ -1864,7 +1995,9 @@ U14API(short) U14GetString(short hand, char* pBuffer, WORD wMaxLen)
 *****************************************************************************/
 U14API(short) U14GetChar(short hand, char* pcChar)
 {
-#ifdef _IS_WINDOWS_
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
+#if defined(_IS_WINDOWS_) && !defined(__WINE__)
     char sz[2];                             // read a very short string
     short sErr = U14GetString(hand, sz, 2); // read one char and nul terminate it
     *pcChar = sz[0];    // copy to result, NB char translate done by GetString
@@ -1875,7 +2008,7 @@ U14API(short) U14GetChar(short hand, char* pcChar)
     }
     return sErr;
 #endif
-#ifdef LINUX
+#if defined(LINUX) || defined(__WINE__)
     short sErr = CheckHandle(hand);
     if (sErr != U14ERR_NOERROR)             // Check parameters
         return sErr;
@@ -1896,6 +2029,8 @@ U14API(short) U14GetChar(short hand, char* pcChar)
 ****************************************************************************/
 U14API(short) U14Stat1401(short hand)
 {
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
     return ((short)(U14LineCount(hand) > 0));
 }
 
@@ -1905,14 +2040,16 @@ U14API(short) U14Stat1401(short hand)
 *****************************************************************************/
 U14API(short) U14CharCount(short hand)
 {
-#ifdef _IS_WINDOWS_
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
+#if defined(_IS_WINDOWS_) && !defined(__WINE__)
     TCSBLOCK csBlock;
     short sErr = U14Status1401(hand, U14_STAT1401, &csBlock);
     if (sErr == U14ERR_NOERROR)
         sErr = csBlock.ints[0];
     return sErr;
 #endif
-#ifdef LINUX
+#if defined(LINUX) || defined(__WINE__)
     short sErr = CheckHandle(hand);
     return (sErr == U14ERR_NOERROR) ? CED_Stat1401(aHand1401[hand]) : sErr;
 #endif
@@ -1924,14 +2061,16 @@ U14API(short) U14CharCount(short hand)
 *****************************************************************************/
 U14API(short) U14LineCount(short hand)
 {
-#ifdef _IS_WINDOWS_
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
+#if defined(_IS_WINDOWS_) && !defined(__WINE__)
     TCSBLOCK csBlock;
     short sErr = U14Status1401(hand, U14_LINECOUNT, &csBlock);
     if (sErr == U14ERR_NOERROR)
         sErr = csBlock.ints[0];
     return sErr;
 #endif
-#ifdef LINUX
+#if defined(LINUX) || defined(__WINE__)
     short sErr = CheckHandle(hand);
     return (sErr == U14ERR_NOERROR) ? CED_LineCount(aHand1401[hand]) : sErr;
 #endif
@@ -1948,6 +2087,8 @@ U14API(short) U14LineCount(short hand)
 ****************************************************************************/
 U14API(void)  U14GetErrorString(short nErr, char* pStr, WORD wMax)
 {
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,nErr);
+
     char    wstr[150];
 
     switch (nErr)              /* Basically, we do this with a switch block */
@@ -2116,8 +2257,10 @@ U14API(void)  U14GetErrorString(short nErr, char* pStr, WORD wMax)
 ***************************************************************************/
 U14API(short) U14GetTransfer(short hand, TGET_TX_BLOCK *pTransBlock)
 {
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
     short sErr = CheckHandle(hand);
-#ifdef _IS_WINDOWS_
+#if defined(_IS_WINDOWS_) && !defined(__WINE__)
     if (sErr == U14ERR_NOERROR)
     { 
         DWORD dwBytes = 0;
@@ -2131,7 +2274,7 @@ U14API(short) U14GetTransfer(short hand, TGET_TX_BLOCK *pTransBlock)
     }
     return sErr;
 #endif
-#ifdef LINUX
+#if defined(LINUX) || defined(__WINE__)
     return (sErr == U14ERR_NOERROR) ? CED_GetTransfer(aHand1401[hand], pTransBlock) : sErr;
 #endif
 }
@@ -2147,7 +2290,9 @@ U14API(short) U14GetTransfer(short hand, TGET_TX_BLOCK *pTransBlock)
 //     3 unable to set process working set - bad parameters?
 U14API(short) U14WorkingSet(DWORD dwMinKb, DWORD dwMaxKb)
 {
-#ifdef _IS_WINDOWS_
+    if (VERBOSE) fprintf(stderr,"%s(%i,%i)\n",__func__,dwMinKb,dwMaxKb);
+
+#if defined(_IS_WINDOWS_) && !defined(__WINE__)
     short sRetVal = 0;                      // 0 means all is OK
     HANDLE hProcess;
     DWORD dwVer = GetVersion();
@@ -2187,7 +2332,7 @@ U14API(short) U14WorkingSet(DWORD dwMinKb, DWORD dwMaxKb)
 
     return sRetVal;
 #endif
-#ifdef LINUX
+#if defined(LINUX) || defined(__WINE__)
     if (dwMinKb | dwMaxKb)
     {
         // to stop compiler moaning
@@ -2202,8 +2347,10 @@ U14API(short) U14WorkingSet(DWORD dwMinKb, DWORD dwMaxKb)
 *****************************************************************************/
 U14API(short) U14UnSetTransfer(short hand, WORD wArea)
 {
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
     short sErr = CheckHandle(hand);
-#ifdef _IS_WINDOWS_
+#if defined(_IS_WINDOWS_) && !defined(__WINE__)
     if (sErr == U14ERR_NOERROR)
     {
        TCSBLOCK csBlock;
@@ -2216,7 +2363,7 @@ U14API(short) U14UnSetTransfer(short hand, WORD wArea)
     }
     return sErr;
 #endif
-#ifdef LINUX
+#if defined(LINUX) || defined(__WINE__)
     return (sErr == U14ERR_NOERROR) ? CED_UnsetTransfer(aHand1401[hand], wArea) : sErr;
 #endif
 }
@@ -2231,6 +2378,8 @@ U14API(short) U14UnSetTransfer(short hand, WORD wArea)
 U14API(short) U14SetTransArea(short hand, WORD wArea, void *pvBuff,
                                           DWORD dwLength, short eSz)
 {
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
     TRANSFERDESC td;
     short sErr = CheckHandle(hand);
     if (sErr != U14ERR_NOERROR)
@@ -2238,7 +2387,7 @@ U14API(short) U14SetTransArea(short hand, WORD wArea, void *pvBuff,
     if (wArea >= MAX_TRANSAREAS)                    // Is this a valid area number
         return U14ERR_BADAREA;
 
-#ifdef _IS_WINDOWS_
+#if defined(_IS_WINDOWS_) && !defined(__WINE__)
     assert(apAreas[hand][wArea] == NULL);
     assert(auAreas[hand][wArea] == 0);
 
@@ -2314,7 +2463,7 @@ U14API(short) U14SetTransArea(short hand, WORD wArea, void *pvBuff,
 
     return sErr;
 #endif
-#ifdef LINUX
+#if defined(LINUX) || defined(__WINE__)
     // The strange cast is so that it works in 64 and 32-bit linux as long is 64-bits
     // in the 64 bit version.
     td.lpvBuff = (long long)((unsigned long)pvBuff);
@@ -2347,7 +2496,9 @@ U14API(short) U14SetTransArea(short hand, WORD wArea, void *pvBuff,
 U14API(short) U14SetTransferEvent(short hand, WORD wArea, BOOL bEvent,
                                   BOOL bToHost, DWORD dwStart, DWORD dwLength)
 {
-#ifdef _IS_WINDOWS_
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
+#if defined(_IS_WINDOWS_) && !defined(__WINE__)
     TCSBLOCK csBlock;
     short sErr = U14TransferFlags(hand);        // see if we can handle events
     if (sErr >= U14ERR_NOERROR)                 // check handle is OK
@@ -2393,7 +2544,7 @@ U14API(short) U14SetTransferEvent(short hand, WORD wArea, BOOL bEvent,
 
     return sErr;
 #endif
-#ifdef LINUX
+#if defined(LINUX) || defined(__WINE__)
     TRANSFEREVENT te;
     short sErr = CheckHandle(hand);
     if (sErr != U14ERR_NOERROR)
@@ -2418,7 +2569,9 @@ U14API(short) U14SetTransferEvent(short hand, WORD wArea, BOOL bEvent,
 ****************************************************************************/
 U14API(int) U14TestTransferEvent(short hand, WORD wArea)
 {
-#ifdef _IS_WINDOWS_
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
+#if defined(_IS_WINDOWS_) && !defined(__WINE__)
     int iErr = CheckHandle(hand);
     if (iErr == U14ERR_NOERROR)
     {
@@ -2427,7 +2580,7 @@ U14API(int) U14TestTransferEvent(short hand, WORD wArea)
     }
     return iErr;
 #endif
-#ifdef LINUX
+#if defined(LINUX) || defined(__WINE__)
     short sErr = CheckHandle(hand);
     return (sErr == U14ERR_NOERROR) ? CED_TestEvent(aHand1401[hand], wArea) : sErr;
 #endif
@@ -2443,7 +2596,9 @@ U14API(int) U14TestTransferEvent(short hand, WORD wArea)
 ****************************************************************************/
 U14API(int) U14WaitTransferEvent(short hand, WORD wArea, int msTimeOut)
 {
-#ifdef _IS_WINDOWS_
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
+#if defined(_IS_WINDOWS_) && !defined(__WINE__)
     int iErr = CheckHandle(hand);
     if (iErr == U14ERR_NOERROR)
     {
@@ -2458,7 +2613,7 @@ U14API(int) U14WaitTransferEvent(short hand, WORD wArea, int msTimeOut)
     }
     return iErr;
 #endif
-#ifdef LINUX
+#if defined(LINUX) || defined(__WINE__)
     short sErr = CheckHandle(hand);
     return (sErr == U14ERR_NOERROR) ? CED_WaitEvent(aHand1401[hand], wArea, msTimeOut) : sErr;
 #endif
@@ -2474,6 +2629,8 @@ U14API(int) U14WaitTransferEvent(short hand, WORD wArea, int msTimeOut)
 U14API(short) U14SetCircular(short hand, WORD wArea, BOOL bToHost,
 									void *pvBuff, DWORD dwLength)
 {
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
     short sErr = CheckHandle(hand);
     if (sErr != U14ERR_NOERROR)
         return sErr;
@@ -2483,7 +2640,7 @@ U14API(short) U14SetCircular(short hand, WORD wArea, BOOL bToHost,
 
 	if (!bToHost)             /* For now, support tohost transfers only */
         return U14ERR_BADAREA;            /* best error code I can find */
-#ifdef _IS_WINDOWS_
+#if defined(_IS_WINDOWS_) && !defined(__WINE__)
     assert(apAreas[hand][wArea] == NULL);
     assert(auAreas[hand][wArea] == 0);
 
@@ -2525,7 +2682,7 @@ U14API(short) U14SetCircular(short hand, WORD wArea, BOOL bToHost,
 
     return sErr;
 #endif
-#ifdef LINUX
+#if defined(LINUX) || defined(__WINE__)
     else
     {
         TRANSFERDESC td;
@@ -2544,6 +2701,8 @@ U14API(short) U14SetCircular(short hand, WORD wArea, BOOL bToHost,
 ****************************************************************************/
 U14API(int) U14GetCircBlk(short hand, WORD wArea, DWORD *pdwOffs)
 {
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
     int lErr = CheckHandle(hand);
     if (lErr != U14ERR_NOERROR)
         return lErr;
@@ -2552,7 +2711,7 @@ U14API(int) U14GetCircBlk(short hand, WORD wArea, DWORD *pdwOffs)
         return U14ERR_BADAREA;
     else
     {
-#ifdef _IS_WINDOWS_
+#if defined(_IS_WINDOWS_) && !defined(__WINE__)
         PARAMBLK rWork;
         TCSBLOCK csBlock;
         DWORD dwBytes;
@@ -2570,7 +2729,7 @@ U14API(int) U14GetCircBlk(short hand, WORD wArea, DWORD *pdwOffs)
             *pdwOffs = rWork.csBlock.longs[0];  // Offset is first in array
         }
 #endif
-#ifdef LINUX
+#if defined(LINUX) || defined(__WINE__)
         TCIRCBLOCK cb;
         cb.nArea = wArea;                       // Area number into control block
         cb.dwOffset = 0;
@@ -2594,13 +2753,15 @@ U14API(int) U14GetCircBlk(short hand, WORD wArea, DWORD *pdwOffs)
 U14API(int) U14FreeCircBlk(short hand, WORD wArea, DWORD dwOffs, DWORD dwSize,
                                         DWORD *pdwOffs)
 {
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
     int lErr = CheckHandle(hand);
     if (lErr != U14ERR_NOERROR)
         return lErr;
 
     if (wArea < MAX_TRANSAREAS)                 // Is this a valid area number
     {
-#ifdef _IS_WINDOWS_
+#if defined(_IS_WINDOWS_) && !defined(__WINE__)
         PARAMBLK rWork;
         TCSBLOCK csBlock;
         DWORD dwBytes;
@@ -2620,7 +2781,7 @@ U14API(int) U14FreeCircBlk(short hand, WORD wArea, DWORD dwOffs, DWORD dwSize,
            *pdwOffs = rWork.csBlock.longs[0];  // Offset is first in array
        }
 #endif
-#ifdef LINUX
+#if defined(LINUX) || defined(__WINE__)
         TCIRCBLOCK cb;
         cb.nArea = wArea;                       // Area number into control block
         cb.dwOffset = dwOffs;
@@ -2649,6 +2810,8 @@ U14API(int) U14FreeCircBlk(short hand, WORD wArea, DWORD dwOffs, DWORD dwSize,
 static short Transfer(short hand, BOOL bTo1401, char* pData,
                        DWORD dwSize, DWORD dw1401, short eSz)
 {
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
     char strcopy[MAXSTRLEN+1];          // to hold copy of work string
     short sResult = U14SetTransArea(hand, 0, (void *)pData, dwSize, eSz);
     if (sResult == U14ERR_NOERROR)      // no error
@@ -2673,6 +2836,8 @@ static short Transfer(short hand, BOOL bTo1401, char* pData,
 U14API(short) U14ToHost(short hand, char* pAddrHost, DWORD dwSize,
                                             DWORD dw1401, short eSz)
 {
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
     short sErr = CheckHandle(hand);
     if ((sErr == U14ERR_NOERROR) && dwSize) // TOHOST is a constant
         sErr = Transfer(hand, TOHOST, pAddrHost, dwSize, dw1401, eSz);
@@ -2685,6 +2850,8 @@ U14API(short) U14ToHost(short hand, char* pAddrHost, DWORD dwSize,
 U14API(short) U14To1401(short hand, const char* pAddrHost,DWORD dwSize,
                                     DWORD dw1401, short eSz)
 {
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
     short sErr = CheckHandle(hand);
     if ((sErr == U14ERR_NOERROR) && dwSize) // TO1401 is a constant
         sErr = Transfer(hand, TO1401, (char*)pAddrHost, dwSize, dw1401, eSz);
@@ -2702,13 +2869,15 @@ U14API(short) U14To1401(short hand, const char* pAddrHost,DWORD dwSize,
 #define file_read(h, buffer, size) (_lread(h, buffer, size) == size)
 #endif
 #ifdef LINUX
-#define file_exist(name) (access(name, F_OK) != -1)
+#define file_exist(name) (access(name, 0) != -1)
 #define file_open(name) open(name, O_RDONLY)
 #define file_close(h)   close(h)
 #define file_seek(h, pos) lseek(h, pos, SEEK_SET) 
-#define file_read(h, buffer, size) (read(h, buffer, size) == (ssize_t)size)
-static DWORD GetModuleFileName(void* dummy, char* buffer, int max)
+#define file_read(h, buffer, size) (read(h, buffer, size) == size)
+int GetModuleFileName(void* dummy, char* buffer, DWORD max)
 {
+    if (VERBOSE) fprintf(stderr,"%s(...)\n",__func__);
+
     // The following works for Linux systems with a /proc file system.
     char szProcPath[32];
     sprintf(szProcPath, "/proc/%d/exe", getpid());  // attempt to read link
@@ -2724,6 +2893,8 @@ static DWORD GetModuleFileName(void* dummy, char* buffer, int max)
 
 U14API(short) U14LdCmd(short hand, const char* command)
 {
+    if (VERBOSE) fprintf(stderr,"%s(%i,\"%s\")\n",__func__,hand,command);
+
     char strcopy[MAXSTRLEN+1];      // to hold copy of work string
     BOOL bGotIt = FALSE;            // have we found the command file?
     int iFHandle;                   // file handle of command
@@ -2762,6 +2933,7 @@ U14API(short) U14LdCmd(short hand, const char* command)
         strcat(szCmd, szExt);               // add it to the end
     }
 
+#if defined(__WIN32__)
     // Next place to look is in the 1401 folder in the same place as the
     // application was run from.
     if (!bGotIt)                            // Still not got it?
@@ -2782,6 +2954,7 @@ U14API(short) U14LdCmd(short hand, const char* command)
             }
         }
     }
+#endif
 
     // Next place to look is in whatever path is set by the 1401DIR environment
     // variable, if it exists.
@@ -2812,14 +2985,14 @@ U14API(short) U14LdCmd(short hand, const char* command)
     else
     {                                   // first read in the header block
         CMDHEAD rCmdHead;               // to hold the command header
-        if (file_read(iFHandle, &rCmdHead, sizeof(CMDHEAD)))
+        if (file_read(iFHandle, (&rCmdHead), (sizeof(CMDHEAD)) ))
         {
             size_t nComSize = rCmdHead.wCmdSize;
             char* pMem = malloc(nComSize);
             if (pMem != NULL)
             {
                 file_seek(iFHandle, sizeof(CMDHEAD));
-                if (file_read(iFHandle, pMem, (UINT)nComSize))
+                if (file_read(iFHandle, pMem, ((unsigned)nComSize) ))
                 {
                     sErr = U14SetTransArea(hand, 0, (void *)pMem, (DWORD)nComSize, ESZBYTES);
                     if (sErr == U14ERR_NOERROR)
@@ -2860,6 +3033,8 @@ U14API(short) U14LdCmd(short hand, const char* command)
 ****************************************************************************/
 U14API(DWORD) U14Ld(short hand, const char* vl, const char* str)
 {
+    if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
+
     DWORD dwIndex = 0;              // index to current command
     long lErr = U14ERR_NOERROR;     // what the error was that went wrong
     char strcopy[MAXSTRLEN+1];      // stores unmodified str parameter
@@ -2945,6 +3120,9 @@ U14API(DWORD) U14Ld(short hand, const char* vl, const char* str)
 // Initialise the library (if not initialised) and return the library version
 U14API(int) U14InitLib(void)
 {
+    //if (VERBOSE) fprintf(stderr,"%s() [iAttached=%i]\n",__func__,iAttached);
+    fprintf(stderr,"%s line %i: %s()\n",__FILE__,__LINE__,__func__);
+
     int iRetVal = U14LIB_VERSION;
     if (iAttached == 0)         // only do this the first time please
     {
@@ -2990,7 +3168,7 @@ U14API(int) U14InitLib(void)
 /// setup the library.
 
 
-#ifdef _IS_WINDOWS_
+#if defined(_IS_WINDOWS_) || defined(__WINE__)
 #ifndef U14_NOT_DLL
 /****************************************************************************
 ** FUNCTION: DllMain(HANDLE, DWORD, LPVOID)
@@ -3001,6 +3179,9 @@ U14API(int) U14InitLib(void)
 INT APIENTRY DllMain(HANDLE hInst, DWORD ul_reason_being_called, LPVOID lpReserved)
 {
     int iRetVal = 1;
+
+    //if (VERBOSE) 
+    fprintf(stderr,"%s line %i: %s(%i,%i...)\n",__FILE__,__LINE__,__func__,hInst,ul_reason_being_called);
 
     switch (ul_reason_being_called)
     {
@@ -3023,12 +3204,18 @@ INT APIENTRY DllMain(HANDLE hInst, DWORD ul_reason_being_called, LPVOID lpReserv
 #ifdef LINUX
 void __attribute__((constructor)) use1401_load(void)
 {
+    //if (VERBOSE) fprintf(stderr,"%s()\n",__func__);
+    fprintf(stderr,"%s line %i: %s()\n",__FILE__,__LINE__,__func__);
+
     U14InitLib();
     ++iAttached;
 }
 
 void __attribute__((destructor)) use1401_unload(void)
 {
+//    if (VERBOSE) fprintf(stderr,"%s()\n",__func__);
+    fprintf(stderr,"%s line %i: %s()\n",__FILE__,__LINE__,__func__);
+
         if (--iAttached == 0)               // last man out?
             U14CloseAll();                  // release all open handles
 }
