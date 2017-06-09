@@ -11,6 +11,14 @@
 #define __USE1401_H__
 #include "machine.h"
 
+#define MAX1401         8       // The number of 1401s that can be supported
+extern short asType1401[MAX1401+1];         // The type of the 1401
+extern int aHand1401[MAX1401+1];
+extern short asDriverType[MAX1401+1];
+extern int lLastDriverType;
+extern int alDriverVersion[MAX1401+1];            // version/type of each driver
+extern short asLastRetCode[MAX1401+1];            // last code from a fn call
+
 // Some definitions to make things compatible. If you want to use Use1401 directly
 //  from a Windows program you should define U14_NOT_DLL, in which case you also
 //  MUST make sure that your application startup code calls U14InitLib().
@@ -194,24 +202,13 @@ typedef struct TGetTxBlock              /* used for U14_GetTransfer results */
    short    used;                       /* number of used entries */
    TXENTRY  entries[GET_TX_MAXENTRIES]; /* Array of mapped block info */
 } TGET_TX_BLOCK;
-
-/// The same thing with a single entry, used in Linux for U14_GetTransfer results
-typedef struct TGetTxBlock1             /* used for U14_GetTransfer results */
-{                                               /* matches structure in VXD */
-   U14LONG size;
-   U14LONG linear;
-   short   seg;
-   short   reserved;
-   short   avail;                      /* number of available entries */
-   short   used;                       /* number of used entries */
-   TXENTRY entries[1];                 /* Array of mapped block info */
-} TGET_TX_BLOCK1;
-
 #endif
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+U14API(int)   GetDriverVersion(short hand);
 
 U14API(int)   U14WhenToTimeOut(short hand);         // when to timeout in ms
 U14API(short) U14PassedTime(int iTime);             // non-zero if iTime passed

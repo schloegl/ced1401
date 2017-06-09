@@ -79,6 +79,7 @@
 #if defined(LINUX) || defined(MAXOSX)
     #define FAR
 
+    typedef int LONG;       // To match Windows
     typedef int BOOL;       // To match Windows
     typedef char * LPSTR;
     typedef const char * LPCSTR;
@@ -103,6 +104,8 @@
 ** syntax for this, though it also supports the MS specific __declspec() as
 ** a synonym.
 */
+
+#if 1
 #ifdef GNUC
     #define DllExport __attribute__((dllexport))
     #define DllImport __attribute__((dllimport))
@@ -118,6 +121,10 @@
 #endif
 #endif /* _IS_WINDOWS_ */
 
+#else
+    #define DllExport
+    #define DllImport
+#endif
     
 #ifndef TRUE
    #define TRUE 1
