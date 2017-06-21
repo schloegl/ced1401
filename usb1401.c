@@ -1198,7 +1198,7 @@ int Allowi(DEVICE_EXTENSION* pdx, bool bInCallback)
 **          enough for a 64-bit pointer.
 *****************************************************************************/
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,36)
-static int ced_ioctl(struct file * file, unsigned int cmd, unsigned long ulArg)
+static ssize_t ced_ioctl(struct file * file, unsigned int cmd, unsigned long ulArg)
 #else
 static int ced_ioctl(struct inode * node, struct file * file, unsigned int cmd, unsigned long ulArg)
 #endif
