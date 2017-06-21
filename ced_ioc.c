@@ -29,6 +29,7 @@
 #include <linux/page-flags.h>
 #include <linux/pagemap.h>
 #include <linux/jiffies.h>
+#include <linux/version.h>
 
 #include "usb1401.h"
 
@@ -650,7 +651,11 @@ int ClearArea(DEVICE_EXTENSION *pdx, int nArea)
                     if (pPages[np])
                     {
                         SetPageDirty(pPages[np]);
+#if LINUX_VERSION_CODE >= (KERNEL_VERSION(4,6,0))
+                        put_page(pPages[np]);
+#else
                         page_cache_release(pPages[np]);
+#endif
                     }
                 }
 
@@ -702,7 +707,15 @@ static int SetArea(DEVICE_EXTENSION *pdx, int nArea, char __user* puBuf,
 
     // To pin down user pages we must first acquire the mapping semaphore.
     down_read(&current->mm->mmap_sem);   // get memory map semaphore
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
+    nPages = get_user_pages(ulStart, 1, 0, pPages, NULL);
+#else
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 6, 0)
+    nPages = get_user_pages(ulStart, 1, 1, 0, pPages, NULL);
+#else
     nPages = get_user_pages(current, current->mm, ulStart, len, 1, 0, pPages, 0);
+#endif
+#endif
     up_read(&current->mm->mmap_sem);     // release the semaphore
     dev_dbg(&pdx->interface->dev, "%s nPages = %d", __func__, nPages);
 
