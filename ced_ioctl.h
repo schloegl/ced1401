@@ -143,73 +143,73 @@ typedef struct ced_ioc_string
 
 #ifndef __KERNEL__
 // If nothing said about return value, it is a U14ERR_... error code (U14ERR_NOERROR for none)
-inline int CED_SendString(int fh, const char* szText, int n){return ioctl(fh, IOCTL_CED_SENDSTRING(n), szText);}
+static inline int CED_SendString(int fh, const char* szText, int n){return ioctl(fh, IOCTL_CED_SENDSTRING(n), szText);}
 
-inline int CED_Reset1401(int fh){return ioctl(fh, IOCTL_CED_RESET1401);}
+static inline int CED_Reset1401(int fh){return ioctl(fh, IOCTL_CED_RESET1401);}
 
-inline int CED_GetChar(int fh){return ioctl(fh, IOCTL_CED_GETCHAR);}
+static inline int CED_GetChar(int fh){return ioctl(fh, IOCTL_CED_GETCHAR);}
 // Return the singe character or a -ve error code.
 
-inline int CED_Stat1401(int fh){return ioctl(fh, IOCTL_CED_STAT1401);}
+static inline int CED_Stat1401(int fh){return ioctl(fh, IOCTL_CED_STAT1401);}
 // Return character count in input buffer
 
-inline int CED_SendChar(int fh, char c){return ioctl(fh, IOCTL_CED_SENDCHAR, c);}
+static inline int CED_SendChar(int fh, char c){return ioctl(fh, IOCTL_CED_SENDCHAR, c);}
 
-inline int CED_LineCount(int fh){return ioctl(fh, IOCTL_CED_LINECOUNT);}
+static inline int CED_LineCount(int fh){return ioctl(fh, IOCTL_CED_LINECOUNT);}
 
-inline int CED_GetString(int fh, char* szText, int nMax){return ioctl(fh, IOCTL_CED_GETSTRING(nMax), szText);}
+static inline int CED_GetString(int fh, char* szText, int nMax){return ioctl(fh, IOCTL_CED_GETSTRING(nMax), szText);}
 // return the count of characters returned. If the string was terminated by CR or 0, then the 0 is part
 // of the count. Otherwise, we will add a zero if there is room, but it is not included in the count.
 // The return value is 0 if there was nothing to read.
 
-inline int CED_GetOutBufSpace(int fh){return ioctl(fh, IOCTL_CED_GETOUTBUFSPACE);}
+static inline int CED_GetOutBufSpace(int fh){return ioctl(fh, IOCTL_CED_GETOUTBUFSPACE);}
 // returns space in the output buffer.
 
-inline int CED_GetBaseAddress(int fh){return ioctl(fh, IOCTL_CED_GETBASEADDRESS);}
+static inline int CED_GetBaseAddress(int fh){return ioctl(fh, IOCTL_CED_GETBASEADDRESS);}
 // This always returns -1 as not implemented.
 
-inline int CED_GetDriverRevision(int fh){return ioctl(fh, IOCTL_CED_GETDRIVERREVISION);}
+static inline int CED_GetDriverRevision(int fh){return ioctl(fh, IOCTL_CED_GETDRIVERREVISION);}
 // returns the major revision <<16 | minor revision.
 
-inline int CED_SetTransfer(int fh, TRANSFERDESC* pTD){return ioctl(fh, IOCTL_CED_SETTRANSFER, pTD);}
+static inline int CED_SetTransfer(int fh, TRANSFERDESC* pTD){return ioctl(fh, IOCTL_CED_SETTRANSFER, pTD);}
 
-inline int CED_UnsetTransfer(int fh, int nArea){return ioctl(fh, IOCTL_CED_UNSETTRANSFER, nArea);}
+static inline int CED_UnsetTransfer(int fh, int nArea){return ioctl(fh, IOCTL_CED_UNSETTRANSFER, nArea);}
 
-inline int CED_SetEvent(int fh, TRANSFEREVENT* pTE){return ioctl(fh, IOCTL_CED_SETEVENT, pTE);}
+static inline int CED_SetEvent(int fh, TRANSFEREVENT* pTE){return ioctl(fh, IOCTL_CED_SETEVENT, pTE);}
 
-inline int CED_GetTransfer(int fh, TGET_TX_BLOCK* pTX){return ioctl(fh, IOCTL_CED_GETTRANSFER, pTX);}
+static inline int CED_GetTransfer(int fh, TGET_TX_BLOCK* pTX){return ioctl(fh, IOCTL_CED_GETTRANSFER, pTX);}
 
-inline int CED_KillIO1401(int fh){return ioctl(fh, IOCTL_CED_KILLIO1401);}
+static inline int CED_KillIO1401(int fh){return ioctl(fh, IOCTL_CED_KILLIO1401);}
 
-inline int CED_BlkTransState(int fh){return ioctl(fh, IOCTL_CED_BLKTRANSSTATE);}
+static inline int CED_BlkTransState(int fh){return ioctl(fh, IOCTL_CED_BLKTRANSSTATE);}
 // returns 0 if no active DMA, 1 if active
 
-inline int CED_StateOf1401(int fh){return ioctl(fh, IOCTL_CED_STATEOF1401);}
+static inline int CED_StateOf1401(int fh){return ioctl(fh, IOCTL_CED_STATEOF1401);}
 
-inline int CED_Grab1401(int fh){return ioctl(fh, IOCTL_CED_GRAB1401);}
-inline int CED_Free1401(int fh){return ioctl(fh, IOCTL_CED_FREE1401);}
+static inline int CED_Grab1401(int fh){return ioctl(fh, IOCTL_CED_GRAB1401);}
+static inline int CED_Free1401(int fh){return ioctl(fh, IOCTL_CED_FREE1401);}
 
-inline int CED_StartSelfTest(int fh){return ioctl(fh, IOCTL_CED_STARTSELFTEST);}
-inline int CED_CheckSelfTest(int fh, TGET_SELFTEST* pGST){return ioctl(fh, IOCTL_CED_CHECKSELFTEST, pGST);}
+static inline int CED_StartSelfTest(int fh){return ioctl(fh, IOCTL_CED_STARTSELFTEST);}
+static inline int CED_CheckSelfTest(int fh, TGET_SELFTEST* pGST){return ioctl(fh, IOCTL_CED_CHECKSELFTEST, pGST);}
 
-inline int CED_TypeOf1401(int fh){return ioctl(fh, IOCTL_CED_TYPEOF1401);}
-inline int CED_TransferFlags(int fh){return ioctl(fh, IOCTL_CED_TRANSFERFLAGS);}
+static inline int CED_TypeOf1401(int fh){return ioctl(fh, IOCTL_CED_TYPEOF1401);}
+static inline int CED_TransferFlags(int fh){return ioctl(fh, IOCTL_CED_TRANSFERFLAGS);}
 
-inline int CED_DbgPeek(int fh, TDBGBLOCK* pDB){return ioctl(fh, IOCTL_CED_DBGPEEK, pDB);}
-inline int CED_DbgPoke(int fh, TDBGBLOCK* pDB){return ioctl(fh, IOCTL_CED_DBGPOKE, pDB);}
-inline int CED_DbgRampData(int fh, TDBGBLOCK* pDB){return ioctl(fh, IOCTL_CED_DBGRAMPDATA, pDB);}
-inline int CED_DbgRampAddr(int fh, TDBGBLOCK* pDB){return ioctl(fh, IOCTL_CED_DBGRAMPADDR, pDB);}
-inline int CED_DbgGetData(int fh, TDBGBLOCK* pDB){return ioctl(fh, IOCTL_CED_DBGGETDATA, pDB);}
-inline int CED_DbgStopLoop(int fh){return ioctl(fh, IOCTL_CED_DBGSTOPLOOP);}
+static inline int CED_DbgPeek(int fh, TDBGBLOCK* pDB){return ioctl(fh, IOCTL_CED_DBGPEEK, pDB);}
+static inline int CED_DbgPoke(int fh, TDBGBLOCK* pDB){return ioctl(fh, IOCTL_CED_DBGPOKE, pDB);}
+static inline int CED_DbgRampData(int fh, TDBGBLOCK* pDB){return ioctl(fh, IOCTL_CED_DBGRAMPDATA, pDB);}
+static inline int CED_DbgRampAddr(int fh, TDBGBLOCK* pDB){return ioctl(fh, IOCTL_CED_DBGRAMPADDR, pDB);}
+static inline int CED_DbgGetData(int fh, TDBGBLOCK* pDB){return ioctl(fh, IOCTL_CED_DBGGETDATA, pDB);}
+static inline int CED_DbgStopLoop(int fh){return ioctl(fh, IOCTL_CED_DBGSTOPLOOP);}
 
-inline int CED_FullReset(int fh){return ioctl(fh, IOCTL_CED_FULLRESET);}
+static inline int CED_FullReset(int fh){return ioctl(fh, IOCTL_CED_FULLRESET);}
 
-inline int CED_SetCircular(int fh, TRANSFERDESC* pTD){return ioctl(fh, IOCTL_CED_SETCIRCULAR, pTD);}
-inline int CED_GetCircBlock(int fh, TCIRCBLOCK* pCB){return ioctl(fh, IOCTL_CED_GETCIRCBLOCK, pCB);}
-inline int CED_FreeCircBlock(int fh, TCIRCBLOCK* pCB){return ioctl(fh, IOCTL_CED_FREECIRCBLOCK, pCB);}
+static inline int CED_SetCircular(int fh, TRANSFERDESC* pTD){return ioctl(fh, IOCTL_CED_SETCIRCULAR, pTD);}
+static inline int CED_GetCircBlock(int fh, TCIRCBLOCK* pCB){return ioctl(fh, IOCTL_CED_GETCIRCBLOCK, pCB);}
+static inline int CED_FreeCircBlock(int fh, TCIRCBLOCK* pCB){return ioctl(fh, IOCTL_CED_FREECIRCBLOCK, pCB);}
 
-inline int CED_WaitEvent(int fh, int nArea, int msTimeOut){return ioctl(fh, IOCTL_CED_WAITEVENT, (nArea & 0xff)|(msTimeOut << 8));}
-inline int CED_TestEvent(int fh, int nArea){return ioctl(fh, IOCTL_CED_TESTEVENT, nArea);}
+static inline int CED_WaitEvent(int fh, int nArea, int msTimeOut){return ioctl(fh, IOCTL_CED_WAITEVENT, (nArea & 0xff)|(msTimeOut << 8));}
+static inline int CED_TestEvent(int fh, int nArea){return ioctl(fh, IOCTL_CED_TESTEVENT, nArea);}
 #endif
 
 #ifdef NOTWANTEDYET
