@@ -10,6 +10,7 @@
 #ifndef __USE1401_H__
 #define __USE1401_H__
 #include "machine.h"
+#include "use14_ioc.h"          // links to device driver stuff
 
 #define MAX1401         8       // The number of 1401s that can be supported
 extern short asType1401[MAX1401+1];         // The type of the 1401

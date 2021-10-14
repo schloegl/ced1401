@@ -178,12 +178,10 @@
 #else
 #define VERBOSE 1
 #endif
-#define STUB 1
 
 #if defined(_IS_WINDOWS_) && !defined(__WINE__)
 #include <io.h>
 #include <windows.h>
-#pragma warning(disable: 4100) /* Disable "Unused formal parameter" warning */
 #include <assert.h>
 #include "process.h"
 
@@ -195,7 +193,6 @@
 #define MINDRIVERMAJREV 1       // minimum driver revision level we need
 #define __packed                // does nothing in Windows
 
-#include "use14_ioc.h"          // links to device driver stuff
 #endif
 
 #if defined(LINUX) || defined(__WINE__)
@@ -324,7 +321,7 @@ static short CheckHandle(short h)
 ** U14Status1401    Used for functions which do not pass any data in but
 **                  get data back
 ****************************************************************************/
-static short U14Status1401(short sHand, LONG lCode, TCSBLOCK* pBlk)
+short U14Status1401(short sHand, LONG lCode, TCSBLOCK* pBlk)
 {
     if (VERBOSE) fprintf(stderr,"%s(%i,%i,..)\n",__func__,sHand,lCode);
 
@@ -332,8 +329,6 @@ static short U14Status1401(short sHand, LONG lCode, TCSBLOCK* pBlk)
 
     if ((sHand < 0) || (sHand >= MAX1401))  /* Check parameters */
         return U14ERR_BADHAND;
-
-#if !defined(STUB)
 
 #ifndef _WIN64
     if (!USE_NT_DIOC(sHand)) 
@@ -355,9 +350,6 @@ static short U14Status1401(short sHand, LONG lCode, TCSBLOCK* pBlk)
             return rWork.sState;
         }
     }
-
-#endif  // STUB
-
     return U14ERR_DRIVCOMMS;
 }
 
@@ -365,7 +357,7 @@ static short U14Status1401(short sHand, LONG lCode, TCSBLOCK* pBlk)
 ** U14Control1401   Used for functions which pass data in and only expect
 **                  an error code back
 ****************************************************************************/
-static short U14Control1401(short sHand, LONG lCode, TCSBLOCK* pBlk)
+short U14Control1401(short sHand, LONG lCode, TCSBLOCK* pBlk)
 {
 
     if (VERBOSE) fprintf(stderr,"%s(%i,%i,..)\n",__func__,sHand,lCode);
@@ -374,8 +366,6 @@ static short U14Control1401(short sHand, LONG lCode, TCSBLOCK* pBlk)
 
     if ((sHand < 0) || (sHand >= MAX1401))              /* Check parameters */
         return U14ERR_BADHAND;
-
-#if !defined(STUB)
 
 #ifndef _WIN64
     if (!USE_NT_DIOC(sHand))                    
@@ -394,9 +384,6 @@ static short U14Control1401(short sHand, LONG lCode, TCSBLOCK* pBlk)
             (dwBytes >= sizeof(PARAMBLK)))
             return rWork.sState;
     }
-
-#endif // STUB
-
     return U14ERR_DRIVCOMMS;
 }
 
@@ -2626,9 +2613,7 @@ U14API(int) U14WaitTransferEvent(short hand, WORD wArea, int msTimeOut)
 ** void *pvBuff        The address of the buffer for the data
 ** DWORD dwLength       The length of the buffer for the data
 ****************************************************************************/
-U14API(short) U14SetCircular(short hand, WORD wArea, BOOL bToHost,
-									void *pvBuff, DWORD dwLength)
-{
+U14API(short) U14SetCircular(short hand, WORD wArea, BOOL bToHost, void *pvBuff, DWORD dwLength) {
     if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
 
     short sErr = CheckHandle(hand);
@@ -2699,8 +2684,7 @@ U14API(short) U14SetCircular(short hand, WORD wArea, BOOL bToHost,
 ** Function  GetCircBlk returns the size (& start offset) of the next
 **           available block of circular data.
 ****************************************************************************/
-U14API(int) U14GetCircBlk(short hand, WORD wArea, DWORD *pdwOffs)
-{
+U14API(int) U14GetCircBlk(short hand, WORD wArea, DWORD *pdwOffs) {
     if (VERBOSE) fprintf(stderr,"%s(%i)\n",__func__,hand);
 
     int lErr = CheckHandle(hand);
