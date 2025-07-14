@@ -1211,9 +1211,9 @@ static int ced_ioctl(struct inode * node, struct file * file, unsigned int cmd, 
     // Check that access is allowed, where is is needed. Anything that would have an indeterminate
     // size will be checked by the specific command.
     if (_IOC_DIR(cmd) & _IOC_READ)          // read from point of view of user...
-        err = !access_ok(VERIFY_WRITE, (void __user *)ulArg, _IOC_SIZE(cmd)); // is kernel write
+        err = !access_ok((void __user *)ulArg, _IOC_SIZE(cmd)); // is kernel write
     else if (_IOC_DIR(cmd) & _IOC_WRITE)    // and write from point of view of user...
-        err = !access_ok(VERIFY_READ, (void __user *)ulArg, _IOC_SIZE(cmd)); // is kernel read
+        err = !access_ok((void __user *)ulArg, _IOC_SIZE(cmd)); // is kernel read
     if (err)
         return -EFAULT;
 

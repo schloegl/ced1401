@@ -330,6 +330,7 @@ short U14Status1401(short sHand, LONG lCode, TCSBLOCK* pBlk)
     if ((sHand < 0) || (sHand >= MAX1401))  /* Check parameters */
         return U14ERR_BADHAND;
 
+#if defined(_IS_WINDOWS_) && !defined(__WINE__)
 #ifndef _WIN64
     if (!USE_NT_DIOC(sHand)) 
     {   /* Windows 9x DIOC methods? */
@@ -350,6 +351,7 @@ short U14Status1401(short sHand, LONG lCode, TCSBLOCK* pBlk)
             return rWork.sState;
         }
     }
+#endif
     return U14ERR_DRIVCOMMS;
 }
 
@@ -367,6 +369,7 @@ short U14Control1401(short sHand, LONG lCode, TCSBLOCK* pBlk)
     if ((sHand < 0) || (sHand >= MAX1401))              /* Check parameters */
         return U14ERR_BADHAND;
 
+#if defined(_IS_WINDOWS_) && !defined(__WINE__)
 #ifndef _WIN64
     if (!USE_NT_DIOC(sHand))                    
     {                            /* Windows 9x DIOC methods */
@@ -384,6 +387,7 @@ short U14Control1401(short sHand, LONG lCode, TCSBLOCK* pBlk)
             (dwBytes >= sizeof(PARAMBLK)))
             return rWork.sState;
     }
+#endif
     return U14ERR_DRIVCOMMS;
 }
 
@@ -2426,7 +2430,6 @@ U14API(short) U14SetTransArea(short hand, WORD wArea, void *pvBuff,
         td.lpvBuff = pvBuff;
         td.dwLength = dwLength;
         td.eSize = 0;                // Dummy element size
-
         if (DeviceIoControl(aHand1401[hand],(DWORD)U14_SETTRANSFER,
                             &td,sizeof(TRANSFERDESC),
                             &rWork,sizeof(PARAMBLK),&dwBytes,NULL))
@@ -2453,8 +2456,8 @@ U14API(short) U14SetTransArea(short hand, WORD wArea, void *pvBuff,
 #if defined(LINUX) || defined(__WINE__)
     // The strange cast is so that it works in 64 and 32-bit linux as long is 64-bits
     // in the 64 bit version.
-    td.lpvBuff = (long long)((unsigned long)pvBuff);
-    td.wAreaNum = wArea;
+    td.lpvBuff = pvBuff;
+    td.wArea = wArea;
     td.dwLength = dwLength;
     td.eSize = eSz;                // Dummy element size
     return CED_SetTransfer(aHand1401[hand], &td);
@@ -2671,8 +2674,8 @@ U14API(short) U14SetCircular(short hand, WORD wArea, BOOL bToHost, void *pvBuff,
     else
     {
         TRANSFERDESC td;
-        td.lpvBuff = (long long)((unsigned long)pvBuff);
-        td.wAreaNum = wArea;
+        td.lpvBuff = pvBuff;
+        td.wArea = wArea;
         td.dwLength = dwLength;
         td.eSize = (short)bToHost;       /* Use this for direction flag */
         return CED_SetCircular(aHand1401[hand], &td);

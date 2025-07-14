@@ -24,22 +24,20 @@ extern short asLastRetCode[MAX1401+1];            // last code from a fn call
 //  from a Windows program you should define U14_NOT_DLL, in which case you also
 //  MUST make sure that your application startup code calls U14InitLib().
 // DLL_USE1401 is defined when you are building the Use1401 dll, not otherwise.
-#ifdef _IS_WINDOWS_
-#ifndef U14_NOT_DLL
-#ifdef DLL_USE1401
-#define U14API(retType) retType DllExport __stdcall
+#ifdef __WIN32__
+  #define U14ERRBASE -500
+  #define U14LONG long
+  #ifndef U14_NOT_DLL
+    #ifdef DLL_USE1401
+      #define U14API(retType) retType DllExport __stdcall
+    #else
+      #define U14API(retType) retType DllImport __stdcall
+    #endif
+  #endif
 #else
-#define U14API(retType) retType DllImport __stdcall
-#endif
-#endif
-
-#define U14ERRBASE -500
-#define U14LONG long
-#endif
-
-#ifdef LINUX
-#define U14ERRBASE -1000
-#define U14LONG int
+  #define U14ERRBASE -1000
+  #define U14LONG int
+  #define U14API(retType) retType
 #endif
 
 #ifdef _QT
@@ -161,7 +159,6 @@ extern short asLastRetCode[MAX1401+1];            // last code from a fn call
 /// Stuff used by U14_GetTransfer
 #define GET_TX_MAXENTRIES  257          /* (max length / page size + 1) */
 
-#ifdef _IS_WINDOWS_
 #pragma pack(1)
 
 typedef struct                          /* used for U14_GetTransfer results */
@@ -184,26 +181,7 @@ typedef struct TGetTxBlock              /* used for U14_GetTransfer results */
 typedef TGET_TX_BLOCK *LPGET_TX_BLOCK;
 
 #pragma pack()
-#endif
 
-#ifdef LINUX
-typedef struct                          /* used for U14_GetTransfer results */
-{                                       /* Info on a single mapped block */
-   long long physical;
-   long     size;
-} TXENTRY;
-
-typedef struct TGetTxBlock              /* used for U14_GetTransfer results */
-{                                       /* matches structure in VXD */
-   long long linear;                    /* linear address */
-   long     size;                       /* total size of the mapped area, holds id when called */
-   short    seg;                        /* segment of the address for Win16 */
-   short    reserved;
-   short    avail;                      /* number of available entries */
-   short    used;                       /* number of used entries */
-   TXENTRY  entries[GET_TX_MAXENTRIES]; /* Array of mapped block info */
-} TGET_TX_BLOCK;
-#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -243,6 +221,10 @@ U14API(short) U14SetTransferEvent(short hand, WORD wArea, BOOL bEvent,
 U14API(int)   U14TestTransferEvent(short hand, WORD wArea);
 U14API(int)   U14WaitTransferEvent(short hand, WORD wArea, int msTimeOut);
 U14API(short) U14GetTransfer(short hand, TGET_TX_BLOCK *pTransBlock);
+
+U14API(short) U14WorkingSet(DWORD dwMinKb, DWORD dwMaxKb);
+U14API(short) U14Status1401(short sHand, LONG lCode, TCSBLOCK* pBlk);
+U14API(short) U14Control1401(short sHand, LONG lCode, TCSBLOCK* pBlk);
 
 U14API(short) U14ToHost(short hand, char* pAddrHost,DWORD dwSize,DWORD dw1401,
                                                             short eSz);
@@ -294,5 +276,43 @@ U14API(int)   U14InitLib(void);
 #ifdef __cplusplus
 }
 #endif
+
+
+/****************************************************************************/
+/*                                                                          */
+/* Windows NT Specifics                                                     */
+/*                                                                          */
+/****************************************************************************/
+#if defined(WIN32)
+		/* if we are in NT/Win95/Win32s we have extra bits       */
+#define  MINDRIVERMAJREV   1    /* minimum driver revision level we need    */
+
+#else
+
+#define  MINDRIVERMAJREV   2     /* minimum driver revision level we need   */
+
+#endif
+
+/****************************************************************************/
+/*                                                                          */
+/* Macintosh Specifics                                                      */
+/*                                                                          */
+/****************************************************************************/
+#if defined(macintosh) || defined(_MAC)
+
+/* The basic resource ID, modified by 1401 type (plus is '1402 etc.) */
+#define U14_RES1401COMMAND     '1401'      /* We should calculate these ... */
+#define U14_RESPLUSCOMMAND     '1402'
+#define U14_RESU1401COMMAND    '1403'
+#define U14_RESPOWERCOMMAND    '1404'
+#define U14_RESU14012COMMAND   '1405'
+
+#define k1401CommandFile    "\p1401Commands"
+#define k1401DriverName     "\p.Driver1401"
+
+#define  MAXAREAS   8   /* The number of transfer areas supported by driver */
+
+#endif
+
 
 #endif /* End of ifndef __USE1401_H__ */

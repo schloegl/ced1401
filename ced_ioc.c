@@ -686,14 +686,13 @@ static int SetArea(DEVICE_EXTENSION *pdx, int nArea, char __user* puBuf,
 
     TRANSAREA *pTA = &pdx->rTransDef[nArea]; // to save typing
     struct page **pPages = 0;               // space for page tables
-    int nPages = 0;                         // and number of pages
-
+    long nPages = 0;                         // and number of pages
     int iReturn = ClearArea(pdx, nArea);    // see if OK to use this area
     if ((iReturn != U14ERR_NOTSET) &&          // if not area unused and...
         (iReturn != U14ERR_NOERROR))           // ...not all OK, then...
         return iReturn;                     // ...we cannot use this area
 
-    if (!access_ok(VERIFY_WRITE, puBuf, dwLength))  // if we cannot access the memory...
+    if (!access_ok(puBuf, dwLength))  // if we cannot access the memory...
         return -EFAULT;                     // ...then we are done
 
     // Now allocate space to hold the page pointer and virtual address pointer tables
@@ -706,18 +705,18 @@ static int SetArea(DEVICE_EXTENSION *pdx, int nArea, char __user* puBuf,
     dev_dbg(&pdx->interface->dev, "%s %p, length=%06x, circular %d", __func__, puBuf, dwLength, bCircular);
 
     // To pin down user pages we must first acquire the mapping semaphore.
-    down_read(&current->mm->mmap_sem);   // get memory map semaphore
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
+    down_read(&current->mm->mmap_lock);   // get memory map semaphore
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+    nPages = get_user_pages(ulStart, 1, 0, pPages);
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
     nPages = get_user_pages(ulStart, 1, 0, pPages, NULL);
-#else
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 6, 0)
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 6, 0)
     nPages = get_user_pages(ulStart, 1, 1, 0, pPages, NULL);
 #else
     nPages = get_user_pages(current, current->mm, ulStart, len, 1, 0, pPages, 0);
 #endif
-#endif
-    up_read(&current->mm->mmap_sem);     // release the semaphore
-    dev_dbg(&pdx->interface->dev, "%s nPages = %d", __func__, nPages);
+    up_read(&current->mm->mmap_lock);     // release the semaphore
+    dev_dbg(&pdx->interface->dev, "%s nPages = %ld", __func__, nPages);
 
     if (nPages > 0)                     // if we succeeded
     {
@@ -767,13 +766,15 @@ int SetTransfer(DEVICE_EXTENSION *pdx, TRANSFERDESC __user *pTD)
 {
     int iReturn;
     TRANSFERDESC td;
-    copy_from_user(&td, pTD, sizeof(td));
+    if (copy_from_user(&td, pTD, sizeof(td)))
+        return -ENOMEM;                     // could not copy
+
     mutex_lock(&pdx->io_mutex);
-    dev_dbg(&pdx->interface->dev,"%s area:%d, size:%08x", __func__, td.wAreaNum, td.dwLength);
+    dev_dbg(&pdx->interface->dev,"%s area:%d, size:%08x", __func__, td.wArea, td.dwLength);
     // The strange cast is done so that we don't get warnings in 32-bit linux about the size of the
     // pointer. The pointer is always passed as a 64-bit object so that we don't have problems using
     // a 32-bit program on a 64-bit system. unsigned long is 64-bits on a 64-bit system.
-    iReturn = SetArea(pdx, td.wAreaNum, (char __user *)((unsigned long)td.lpvBuff), td.dwLength, false, false);
+    iReturn = SetArea(pdx, td.wArea, (char __user *)td.lpvBuff, td.dwLength, false, false);
     mutex_unlock(&pdx->io_mutex);
     return iReturn;
 }
@@ -803,7 +804,9 @@ int SetEvent(DEVICE_EXTENSION *pdx, TRANSFEREVENT __user*pTE)
 {
     int iReturn = U14ERR_NOERROR;
     TRANSFEREVENT te;
-    copy_from_user(&te, pTE, sizeof(te));   // get a local copy of the data
+    if (copy_from_user(&te, pTE, sizeof(te)))   // get a local copy of the data
+	return -ENOMEM;                     // could not copy
+
     if (te.wAreaNum >= MAX_TRANSAREAS)      // the area must exist
         return U14ERR_BADAREA;
     else
@@ -1154,7 +1157,8 @@ int DbgPeek(DEVICE_EXTENSION *pdx, TDBGBLOCK __user* pDB)
 {
     int iReturn;
     TDBGBLOCK db;
-    copy_from_user(&db, pDB, sizeof(db));   // get the data
+    if (copy_from_user(&db, pDB, sizeof(db)))   // get the data
+        return -ENOMEM;                     // could not copy
 
     mutex_lock(&pdx->io_mutex);
     dev_dbg(&pdx->interface->dev, "%s @ %08x", __func__, db.iAddr);
@@ -1182,7 +1186,8 @@ int DbgPoke(DEVICE_EXTENSION *pdx, TDBGBLOCK __user *pDB)
 {
     int iReturn;
     TDBGBLOCK db;
-    copy_from_user(&db, pDB, sizeof(db));   // get the data
+    if (copy_from_user(&db, pDB, sizeof(db)))   // get the data
+        return -ENOMEM;                     // could not copy
 
     mutex_lock(&pdx->io_mutex);
     dev_dbg(&pdx->interface->dev, "%s @ %08x", __func__, db.iAddr);
@@ -1210,7 +1215,8 @@ int DbgRampData(DEVICE_EXTENSION *pdx, TDBGBLOCK __user *pDB)
 {
     int iReturn;
     TDBGBLOCK db;
-    copy_from_user(&db, pDB, sizeof(db));   // get the data
+    if (copy_from_user(&db, pDB, sizeof(db)))   // get the data
+        return -ENOMEM;                     // could not copy
 
     mutex_lock(&pdx->io_mutex);
     dev_dbg(&pdx->interface->dev, "%s @ %08x", __func__, db.iAddr);
@@ -1241,7 +1247,8 @@ int DbgRampAddr(DEVICE_EXTENSION *pdx, TDBGBLOCK __user *pDB)
 {
     int iReturn;
     TDBGBLOCK db;
-    copy_from_user(&db, pDB, sizeof(db));   // get the data
+    if (copy_from_user(&db, pDB, sizeof(db)))   // get the data
+        return -ENOMEM;                     // could not copy
 
     mutex_lock(&pdx->io_mutex);
     dev_dbg(&pdx->interface->dev, "%s", __func__);
@@ -1325,15 +1332,17 @@ int SetCircular(DEVICE_EXTENSION *pdx, TRANSFERDESC __user *pTD)
     int iReturn;
     bool bToHost;
     TRANSFERDESC td;
-    copy_from_user(&td, pTD, sizeof(td));
+    if (copy_from_user(&td, pTD, sizeof(td)))
+        return -ENOMEM;                     // could not copy
+
     mutex_lock(&pdx->io_mutex);
-    dev_dbg(&pdx->interface->dev,"%s area:%d, size:%08x", __func__, td.wAreaNum, td.dwLength);
+    dev_dbg(&pdx->interface->dev,"%s area:%d, size:%08x", __func__, td.wArea, td.dwLength);
     bToHost = td.eSize != 0;    // this is used as the tohost flag
 
     // The strange cast is done so that we don't get warnings in 32-bit linux about the size of the
     // pointer. The pointer is always passed as a 64-bit object so that we don't have problems using
     // a 32-bit program on a 64-bit system. unsigned long is 64-bits on a 64-bit system.
-    iReturn = SetArea(pdx, td.wAreaNum, (char __user *)((unsigned long)td.lpvBuff), td.dwLength, true, bToHost);
+    iReturn = SetArea(pdx, td.wArea, (char __user *)td.lpvBuff, td.dwLength, true, bToHost);
     mutex_unlock(&pdx->io_mutex);
     return iReturn;
 }
@@ -1349,7 +1358,9 @@ int GetCircBlock(DEVICE_EXTENSION *pdx, TCIRCBLOCK __user* pCB)
     unsigned int nArea;
     TCIRCBLOCK cb;
     dev_dbg(&pdx->interface->dev, "%s", __func__);
-    copy_from_user(&cb, pCB, sizeof(cb));
+    if (copy_from_user(&cb, pCB, sizeof(cb)))
+        return -ENOMEM;                     // could not copy
+
     mutex_lock(&pdx->io_mutex);
 
     nArea = cb.nArea;                       // Retrieve parameters first
@@ -1396,7 +1407,9 @@ int FreeCircBlock(DEVICE_EXTENSION *pdx, TCIRCBLOCK __user* pCB)
     unsigned int nArea, uStart, uSize;
     TCIRCBLOCK cb;
     dev_dbg(&pdx->interface->dev, "%s", __func__);
-    copy_from_user(&cb, pCB, sizeof(cb));
+    if (copy_from_user(&cb, pCB, sizeof(cb)))
+        return -ENOMEM;                     // could not copy
+
     mutex_lock(&pdx->io_mutex);
 
     nArea = cb.nArea;                               // Retrieve parameters first

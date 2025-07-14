@@ -31,6 +31,7 @@
 
 typedef unsigned short TBLOCKENTRY; // index the blk transfer table 0-7
 
+#ifndef __USE14_IOC_H__
 typedef struct TransferDesc
 {
     long long   lpvBuff;            // address of transfer area (for 64 or 32 bit)
@@ -40,6 +41,7 @@ typedef struct TransferDesc
 } TRANSFERDESC;
 
 typedef TRANSFERDESC*   LPTRANSFERDESC;
+#endif
 
 typedef struct TransferEvent
 {
@@ -79,12 +81,14 @@ typedef struct TCircBlock
     unsigned int dwSize;                // size of the area
 } TCIRCBLOCK;
 
+#ifndef __USE14_IOC_H__
 /// Used to clollect the 1401 status
 typedef struct TCSBlock
 {
     unsigned int uiState;
     unsigned int uiError;
 } TCSBLOCK;
+#endif
 
 // As seen by the user, an ioctl call looks like:
 // int ioctl(int fd, unsigned long cmd, char* argp);

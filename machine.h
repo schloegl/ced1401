@@ -88,7 +88,9 @@
     typedef unsigned char  BYTE;
     typedef BYTE  BOOLEAN;
     typedef unsigned char UCHAR;
+#if !defined __packed
     #define __packed __attribute__((packed))
+#endif
     typedef BYTE * LPBYTE;
     #define HIWORD(x) (WORD)(((x)>>16) & 0xffff)
     #define LOWORD(x) (WORD)((x) & 0xffff)
